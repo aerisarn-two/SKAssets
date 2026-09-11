@@ -63,8 +63,10 @@ namespace SKAssets.Content.Assets
                         findings.Add(Missing("armor-external-skeleton", "an armour mesh skins to the actor's skeleton, not to bones of its own"));
                     break;
 
-                // 52 of the 54 meshes a RACE names are skeletons; the two that are
-                // not are races that point at a body mesh instead.
+                // 52 of the 54 meshes a RACE names are skeletons, and all 43 a BPTD
+                // names are. The two exceptions are a draugr body called
+                // SkeletonWarrior, which is a skin rather than a rig, and
+                // FXEmptyObject, the placeholder eight other record types name too.
                 case "Race":
                 case "BodyPartData":
                     if (!profile.IsSkeleton)
