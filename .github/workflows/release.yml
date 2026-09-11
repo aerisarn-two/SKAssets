@@ -5,9 +5,10 @@
 # Tagging is the trigger, and tests gate the release: nothing is packed or pushed
 # until the suite has passed in this same workflow and off this same commit.
 #
-# The corpus suite does not run here. It sweeps the vanilla masters, and a runner
-# has no copy of Skyrim on it -- without SKASSETS_SKYRIM_DATA those tests return
-# rather than fail, which is what keeps the rest meaningful.
+# The corpus suites do not run here. They read the vanilla masters and the meshes
+# in the archives, and a runner has no copy of Skyrim on it -- without
+# SKASSETS_SKYRIM_DATA those tests return rather than fail, which is what keeps
+# the rest meaningful.
 #
 # Use workflow_dispatch to build, test and pack without publishing anything.
 #
@@ -30,6 +31,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      packages: read
+
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +42,13 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      # SKAssets.Content takes NIFBX and HKSK from GitHub Packages, and
+      # nuget.config takes the credentials from the environment. Read is enough
+      # here: only the release job pushes.
       - name: Restore
+        env:
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: dotnet restore
 
       - name: Build
@@ -91,18 +102,33 @@ jobs:
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "version $version, publish $publish"
 
+      - name: Restore
+        env:
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet restore
+
       - name: Build
         run: >
-          dotnet build -c Release
+          dotnet build --no-restore -c Release
           -p:Version=${{ steps.version.outputs.version }}
           -p:RepositoryUrl=https://github.com/${{ github.repository }}
 
+      #
+      # Both packages carry the same version. They are released together because
+      # SKAssets.Content is built against this SKAssets and nothing makes that
+      # true at restore time otherwise.
+      #
       - name: Pack
-        run: >
-          dotnet pack src/SKAssets/SKAssets.csproj --no-build -c Release
-          -p:Version=${{ steps.version.outputs.version }}
-          -p:RepositoryUrl=https://github.com/${{ github.repository }}
-          -o artifacts
+        run: |
+          set -euo pipefail
+
+          for project in src/SKAssets/SKAssets.csproj src/SKAssets.Content/SKAssets.Content.csproj; do
+            dotnet pack "$project" --no-build -c Release \
+              -p:Version=${{ steps.version.outputs.version }} \
+              -p:RepositoryUrl=https://github.com/${{ github.repository }} \
+              -o artifacts
+          done
 
       # Fail here rather than at the release step, where an empty upload would
       # be reported as an unmatched glob and take longer to read.
@@ -110,14 +136,16 @@ jobs:
         run: |
           set -euo pipefail
           ls -l src/SKAssets/bin/Release/net9.0/SKAssets.dll
+          ls -l src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
           ls -l artifacts/*.nupkg
-          test "$(ls artifacts/*.nupkg | wc -l)" -eq 1
+          test "$(ls artifacts/*.nupkg | wc -l)" -eq 2
 
       - uses: actions/upload-artifact@v4
         with:
           name: SKAssets-${{ steps.version.outputs.version }}
           path: |
             src/SKAssets/bin/Release/net9.0/SKAssets.dll
+            src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
             artifacts/*.nupkg
           if-no-files-found: error
 
@@ -148,4 +176,5 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             src/SKAssets/bin/Release/net9.0/SKAssets.dll
+            src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
             artifacts/*.nupkg

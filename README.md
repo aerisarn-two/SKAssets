@@ -161,6 +161,64 @@ filenames (a folder, not a file), `TES4`'s master list (plugins, not assets), an
 `CELL`'s `XCGD`, which exists only in the Xbox 360 and PS3 builds of the official
 DLC and is not in any PC plugin.
 
+## What a mesh is: SKAssets.Content
+
+The sweep says a plugin needs `Meshes/Clutter/Apple.nif`. It does not say what
+that file *is* — and Skyrim's meshes are not one kind of file with optional
+parts. `SKAssets.Content` reads the mesh through
+[NIFBX](https://github.com/aerisarn-two/NIFBX) and the Havok side through
+[HKSK](https://github.com/aerisarn-two/HKSK), and answers that:
+
+```csharp
+var reader = new NifProfileReader();
+
+using var stream = File.OpenRead("windmill.nif");
+NifProfile profile = reader.Read(stream);
+
+NifRole role = NifRoles.Of(profile);     // NifRole.HavokProp
+NifRoles.NeedsCompanionFiles(role);      // true -- the animation is not in the mesh
+
+var projects = HavokProjectIndex.Load(@"Data\meshes");
+projects.Resolve(profile.BehaviorGraph); // FarmhouseWindMill, a prop project
+
+MeshDependencies.Of(profile, projects);  // the project file, and every file it declares
+MeshRules.Check("Activator", profile);   // what this record requires of this mesh
+```
+
+**24% of the meshes the game's records name cannot be read, animated or exported
+from the mesh alone.** Three of the eight roles need companion files:
+
+| Role | Meshes | Needs |
+| --- | ---: | --- |
+| SkinnedAttachment | 3,201 | the skeleton its bones live in, which the RACE record names |
+| HavokProp | 987 | the Havok project its behaviour graph names, and that project's clips |
+| ActorSkeleton | 52 | the project's rig, which decides what the animations drive |
+
+The other five — static geometry, Gamebryo-animated meshes, self-skinned meshes,
+effects and camera paths — are complete in themselves.
+
+### Checking a mesh against the record that names it
+
+Every rule was measured against the shipped game before it was written, and each
+carries what it scored, because a rule vanilla breaks in quantity is describing
+the checker rather than the format. A head part is a skin over an external
+skeleton in 474 of 474 cases; an ADDN mesh carries no geometry in 91 of 92.
+
+The two that take two files are the two that find real bugs:
+
+```csharp
+SkeletonRules.CheckSkin(profile.SkinBones, raceSkeleton.Nodes);   // 832/835 in vanilla
+SkeletonRules.CheckRig(rigBones, skeletonMesh.Nodes);             // 199/204
+```
+
+Of the three armour meshes in the game that fail the first, one is a Falmer
+helmet weighted to human bones. It loads, and hangs in the air.
+
+**`docs/asset-kinds.md`** is the evidence: the eight roles and their counts, what
+each record type names, how an actor and a prop are assembled across files, and
+the traps — the stale split animation cache, the two skeletons inside every
+`skeleton.hkx`, and the `x_` bones that belong to Havok and to no mesh.
+
 ## What it does not find yet
 
 - **Voice.** No record names a dialogue file. `.fuz` and `.lip` paths are built
@@ -189,17 +247,30 @@ dotnet build
 dotnet test
 ```
 
-Sixty-nine tests, five seconds. They build plugins in memory rather than reading
-any, so they run anywhere.
+118 tests, a few seconds. They build plugins in memory and describe meshes rather
+than reading any, so they run anywhere.
 
-The corpus suite sweeps the masters instead, and does not run unless asked:
+`SKAssets.Content` restores NIFBX and HKSK from GitHub Packages, so building it
+needs `GITHUB_USERNAME` and `GITHUB_TOKEN` set, with a token carrying
+`read:packages`. `SKAssets` itself needs neither.
+
+The corpus suites read the game instead, and do not run unless asked:
 
 ```
 SKASSETS_SKYRIM_DATA="/path/to/Skyrim Special Edition/Data" dotnet test \
-    --filter "FullyQualifiedName~MasterCorpus"
+    --filter "FullyQualifiedName~MasterCorpus"     # the plugins, about seven minutes
+
+SKASSETS_SKYRIM_DATA=... SKASSETS_HAVOK_MESHES=/path/to/loose/meshes dotnet test \
+    --filter "FullyQualifiedName~MeshCorpus"       # 17,670 meshes, about twenty
 ```
 
+The second wants the Havok side as loose files, because the animation cache is
+text the game ships inside a BSA and HKSK reads a folder. Without
+`SKASSETS_HAVOK_MESHES` it checks everything except the project resolution.
+
 ## Layout
+
+`src/SKAssets` — the plugin sweep. Depends on Mutagen and nothing else.
 
 - `Assets/` — what a file is: the media type catalogue, the categories, and the
   path normalising.
@@ -207,6 +278,15 @@ SKASSETS_SKYRIM_DATA="/path/to/Skyrim Special Edition/Data" dotnet test \
   references into a list of files.
 - `Plugins/` — the sweep: asset links, the untyped fields, the deep scan, and
   the runtime shim that lets any of it run off Windows.
+
+`src/SKAssets.Content` — what the files themselves are. Depends on NIFBX and
+HKSK, which is why it is a separate package: a tool that only wants to know what
+a plugin names should not be made to carry a NIF reader and a Havok library.
+
+- `Nif/` — the census of a mesh, and the role read off it.
+- `Assets/` — what a record requires of the mesh it names, and the two checks
+  that take a second file.
+- `Havok/` — the animation cache indexed by what a mesh can name.
 
 ## Licence
 
@@ -218,5 +298,10 @@ Published to GitHub Packages. With a `nuget.config` pointing at the feed and
 `GITHUB_USERNAME` and `GITHUB_TOKEN` set (the token needs `read:packages`):
 
 ```xml
-<PackageReference Include="SKAssets" Version="0.1.0" />
+<PackageReference Include="SKAssets" Version="0.1.0" />          <!-- what a plugin names -->
+<PackageReference Include="SKAssets.Content" Version="0.1.0" />  <!-- what those files are -->
 ```
+
+Both carry the same version and are released together, because `SKAssets.Content`
+is built against a particular `SKAssets` and nothing else makes that true at
+restore time. Taking the first alone brings in Mutagen and nothing more.
