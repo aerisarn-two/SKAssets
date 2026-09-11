@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>SKAssets.Content</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>SKAssets.Content</PackageId>
+    <Authors>Aerisarn</Authors>
+    <Description>Classifies what a Skyrim mesh actually is -- static geometry, a Havok-driven prop, an actor skeleton, a skin over somebody else's skeleton -- and checks it against the record that names it and the Havok project it belongs to.</Description>
+    <PackageTags>skyrim;bethesda;nif;havok;hkx;assets;validation;modding</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/aerisarn-two/SKAssets</RepositoryUrl>
+    <Version>0.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The records, and what they name. -->
+    <ProjectReference Include="../SKAssets/SKAssets.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The mesh, read as a block graph, and the BSXFlags calculation over it: every
+      bit of that is a fact about the graph, and the rules for reading them out are
+      NIFBX's. HKSK is the other side of the same asset: the Havok project a mesh
+      names, the skeleton it rides, and the animation cache that has to agree.
+    -->
+    <PackageReference Include="NIFBX" Version="1.0.1" />
+    <PackageReference Include="HKSK" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SKAssets.Content.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/SKAssets/SKAssets.csproj" />
+    <Project Path="src/SKAssets.Content/SKAssets.Content.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SKAssets.Tests/SKAssets.Tests.csproj" />
+    <Project Path="tests/SKAssets.Content.Tests/SKAssets.Content.Tests.csproj" />
   </Folder>
 </Solution>
