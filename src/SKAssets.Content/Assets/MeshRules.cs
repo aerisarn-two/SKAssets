@@ -54,9 +54,10 @@ namespace SKAssets.Content.Assets
                         findings.Add(Missing("headpart-external-skeleton", "a head part's bones belong to the actor's skeleton, not to the mesh"));
                     break;
 
-                // 2,572 of the 2,603 skinned armour meshes are external skins. The
-                // rest are props and static pieces, which is why the skin is only
-                // required to be external once it exists.
+                // Every one of the 2,722 skinned armour meshes in the game skins
+                // externally. The other 39 an ARMA names are not skinned at all --
+                // props and static pieces -- which is why the rule waits for a skin
+                // rather than demanding one.
                 case "ArmorAddon":
                     if (profile.IsSkinned && !profile.HasExternalSkeleton)
                         findings.Add(Missing("armor-external-skeleton", "an armour mesh skins to the actor's skeleton, not to bones of its own"));

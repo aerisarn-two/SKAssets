@@ -115,7 +115,7 @@ the game breaks in quantity describes the checker rather than the format.
 | --- | --- |
 | `BSXFlags` matches what the block graph says | 12,491 / 12,509 |
 | A head part is a skin over an external skeleton | 474 / 474 |
-| An armour mesh, when skinned, skins externally | 2,572 / 2,603 |
+| An armour mesh, when skinned, skins externally | 2,722 / 2,722 |
 | A RACE or BPTD mesh is a skeleton | 95 / 97 |
 | A CAMS mesh carries no geometry | 76 / 76 |
 | An ADDN mesh carries no geometry | 91 / 92 |

@@ -42,7 +42,8 @@ namespace SKAssets.Content.Tests
 
         /// <summary>
         /// Armour is only required to be an external skin once it is a skin at all:
-        /// 31 of the meshes ARMA records name are props and static pieces.
+        /// 39 of the meshes ARMA records name are not skinned, and the 2,722 that
+        /// are skin externally without exception.
         /// </summary>
         [Fact]
         public void ArmourMayBeUnskinnedButNotSkinnedToItself()
