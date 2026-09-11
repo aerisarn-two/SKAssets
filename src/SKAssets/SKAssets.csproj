@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>SKAssets</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>SKAssets</PackageId>
+    <Authors>Aerisarn</Authors>
+    <Description>Finds every external file a Skyrim plugin refers to. Sweeps ESM, ESP and ESL for model, texture, sound, script and behaviour references, normalises them to data-relative paths and gives each one a media type and a category.</Description>
+    <PackageTags>skyrim;bethesda;esm;esp;bsa;assets;mutagen;modding;mime</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/aerisarn-two/SKAssets</RepositoryUrl>
+
+    <!-- Overridden by the release workflow from the tag. -->
+    <Version>0.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The plugin format itself: records, subrecords and the asset links over them.
+      se-cmd already depends on this, which is what makes the two projects agree
+      about what a record says.
+    -->
+    <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.51.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SKAssets.Tests" />
+  </ItemGroup>
+
+</Project>
