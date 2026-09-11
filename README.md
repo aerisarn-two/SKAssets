@@ -247,7 +247,7 @@ dotnet build
 dotnet test
 ```
 
-118 tests, a few seconds. They build plugins in memory and describe meshes rather
+122 tests, a few seconds. They build plugins in memory and describe meshes rather
 than reading any, so they run anywhere.
 
 `SKAssets.Content` restores NIFBX and HKSK from GitHub Packages, so building it
