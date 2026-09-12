@@ -173,5 +173,37 @@ namespace SKAssets.Export.Tests
                 RagdollFilter.Allocate(bodies, parents),
                 RagdollFilter.Allocate(bodies, parents));
         }
+
+        /// <summary>
+        /// A body outside the ragdoll keeps the loose system group rather than the
+        /// ragdoll's, so it collides with the ragdoll normally.
+        /// </summary>
+        [Fact]
+        public void ABodyOutsideTheRagdollIsNotInItsSystemGroup()
+        {
+            uint loose = RagdollFilter.Pack(
+                RagdollFilter.RagdollLayer, RagdollFilter.LooseSystemGroup, 0, 0);
+
+            Assert.Equal(RagdollFilter.LooseSystemGroup, RagdollFilter.Unpack(loose).SystemGroup);
+            Assert.NotEqual(RagdollFilter.RagdollSystemGroup, RagdollFilter.Unpack(loose).SystemGroup);
+        }
+
+        /// <summary>
+        /// Zero is a value a real file carries -- 172 vanilla bodies have it, being
+        /// the ones outside the ragdoll -- so it cannot double as "absent".
+        /// </summary>
+        [Fact]
+        public void ZeroIsAFilterAndNotAnAbsence()
+        {
+            (int layer, int group, int sub, int dont) = RagdollFilter.Unpack(0u);
+
+            Assert.Equal(0, layer);
+            Assert.Equal(0, group);
+            Assert.Equal(0, sub);
+            Assert.Equal(0, dont);
+
+            // And it is what a loose body legitimately gets.
+            Assert.Equal(0u, RagdollFilter.Pack(0, RagdollFilter.LooseSystemGroup, 0, 0));
+        }
     }
 }
