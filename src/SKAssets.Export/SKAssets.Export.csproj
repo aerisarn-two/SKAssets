@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>SKAssets.Export</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>SKAssets.Export</PackageId>
+    <Authors>Aerisarn</Authors>
+    <Description>Builds one FBX per asset, carrying everything the asset is made of: the mesh and its collision from the NIF, the skins that ride its skeleton, and every animation the Havok project and the NIF itself hold, as one stack each.</Description>
+    <PackageTags>skyrim;bethesda;nif;havok;hkx;fbx;export;modding</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/aerisarn-two/SKAssets</RepositoryUrl>
+    <Version>0.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- What an asset is made of, and which files it drags behind it. -->
+    <ProjectReference Include="../SKAssets.Content/SKAssets.Content.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The heaviest of the three packages, and the reason for the split. NIFBX
+      turns a mesh into a scene, HKFBX turns a Havok rig and its clips into one,
+      and this is where the two become a single file. A tool that only wants to
+      know what a plugin refers to should not be made to carry any of it.
+    -->
+    <PackageReference Include="NIFBX" Version="1.0.1" />
+    <PackageReference Include="HKFBX" Version="1.2.0" />
+    <PackageReference Include="HKSK" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SKAssets.Export.Tests" />
+  </ItemGroup>
+
+</Project>
