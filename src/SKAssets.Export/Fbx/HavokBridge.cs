@@ -318,6 +318,27 @@ namespace SKAssets.Export.Fbx
                 Number(node, "collision_filter", havok.CollisionFilterInfo);
                 Write(node, "inverse_inertia", Vector(havok.InverseInertia));
 
+                // And over the top of the six derived above, because a derivation
+                // that is right 97% of the time is wrong 29 bodies out of 982 and a
+                // round trip has to be exact. The derivation is not wasted: it is
+                // what the branch below uses, and that branch is the one new content
+                // takes. Deriving is for when there is no answer to copy; while
+                // there is one, copying it is the only way to hand back the file
+                // that was handed in.
+                //
+                //   friction     953 of 982 derived exactly
+                //   restitution  920
+                //   mass         734
+                //   damping       29, and it is stored as a half-float, so the
+                //                 scaled mesh value almost never lands on one
+                //
+                Number(node, "inverse_mass", havok.InverseMass);
+                Number(node, "friction", havok.Friction);
+                Number(node, "restitution", havok.Restitution);
+                Number(node, "linear_damping", havok.LinearDamping);
+                Number(node, "angular_damping", havok.AngularDamping);
+                Number(node, "quality_type", havok.QualityType);
+
                 // The mesh's capsule is the same capsule 716 times out of 847 once
                 // the endpoints are taken the right way round. The rest are retuned
                 // in the ragdoll -- same axis, same centre, a different half length
@@ -343,6 +364,39 @@ namespace SKAssets.Export.Fbx
                     Write(node, "capsule_b", Vector(mesh.CapsuleB));
                     Number(node, "capsule_radius", mesh.CapsuleRadius);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Every Havok setting a body has, for a body with nothing else to say.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="WritePhysics"/> is for a body the mesh also describes, and
+        /// weighs the two sources against each other. This is for one the mesh does
+        /// not have at all — the pelt simulators, the bumpers, the controllers —
+        /// where there is only the one source and it simply gets copied.
+        /// </remarks>
+        public static void WriteBody(FbxObject node, RagdollBody body)
+        {
+            ArgumentNullException.ThrowIfNull(node);
+            ArgumentNullException.ThrowIfNull(body);
+
+            Number(node, "motion_type", body.MotionType);
+            Number(node, "quality_type", body.QualityType);
+            Number(node, "collision_filter", body.CollisionFilterInfo);
+            Number(node, "inverse_mass", body.InverseMass);
+            Number(node, "friction", body.Friction);
+            Number(node, "restitution", body.Restitution);
+            Number(node, "linear_damping", body.LinearDamping);
+            Number(node, "angular_damping", body.AngularDamping);
+            Write(node, "inverse_inertia", Vector(body.InverseInertia));
+
+            if (body.Shape is { } shape)
+            {
+                Write(node, "shape", "capsule");
+                Write(node, "capsule_a", Vector(shape.VertexA));
+                Write(node, "capsule_b", Vector(shape.VertexB));
+                Number(node, "capsule_radius", shape.Radius);
             }
         }
 

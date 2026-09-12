@@ -159,9 +159,13 @@ namespace SKAssets.Export.Fbx
                 node.Properties.SetUserString(HavokBridge.BodyPrefix + "ragdoll_bone", body.Name);
                 node.Properties.SetUserString(HavokBridge.BodyPrefix + "rig_bone", body.RigBone ?? string.Empty);
                 node.Properties.SetUserString(HavokBridge.BodyPrefix + "in_ragdoll", body.InRagdoll ? "1" : "0");
-                node.Properties.SetUserFloat(HavokBridge.BodyPrefix + "motion_type", body.MotionType);
-                node.Properties.SetUserFloat(HavokBridge.BodyPrefix + "quality_type", body.QualityType);
-                node.Properties.SetUserFloat(HavokBridge.BodyPrefix + "collision_filter", body.CollisionFilterInfo);
+
+                // Every setting, not just the three the ragdoll cannot run without.
+                // A body invented here has no node in the mesh, so the bridge never
+                // reached it and nothing else will: leaving the rest out gave six
+                // bodies a friction of zero where the file said 0.5 -- the wolf's
+                // pelt simulators, the netch's capsule, the wisp's controller.
+                HavokBridge.WriteBody(node, body);
 
                 FbxObject? under = byName.GetValueOrDefault(havok.Rig.Bones[0].Name);
                 if (under is not null) scene.Connect(node, under);
