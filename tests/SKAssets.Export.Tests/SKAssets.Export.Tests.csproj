@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/SKAssets.Export/SKAssets.Export.csproj" />
+    <ProjectReference Include="../../src/SKAssets.Content/SKAssets.Content.csproj" />
   </ItemGroup>
 
 </Project>
