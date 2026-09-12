@@ -219,6 +219,38 @@ each record type names, how an actor and a prop are assembled across files, and
 the traps — the stale split animation cache, the two skeletons inside every
 `skeleton.hkx`, and the `x_` bones that belong to Havok and to no mesh.
 
+## One FBX for a creature: SKAssets.Export
+
+An actor's skeleton is stored twice and neither copy is complete.
+`skeleton.nif` has the bone tree, the collision shapes, the rigid bodies and the
+constraints; `skeleton.hkx` has the animation rig, the ragdoll and the mappers
+between them. A DCC can open neither.
+
+`SkeletonExchange` folds both into one FBX and takes them apart again:
+
+```csharp
+FbxDocument scene = SkeletonExchange.Export(mesh, havok);   // one file from two
+SkeletonFile rebuilt = SkeletonExchange.ImportHavok(scene); // and back again
+```
+
+Over the 45 creatures in the shipped game that ship both files with a ragdoll,
+that round trip reproduces **all 45 `skeleton.hkx` files byte for byte** — every
+bone, body, capsule and joint bit-identical. Not within a tolerance: a skeleton
+that comes back with one bit changed is a file the game still loads and the
+ragdoll may still behave differently in.
+
+`Export` without a `skeleton.hkx` is the other half of the job. It derives the
+ragdoll from the mesh alone — names by a vanilla convention, physics out of the
+NIF's rigid bodies, collision filters allocated from the ragdoll's own hierarchy
+— which is what authoring new content needs. Both paths exist because exactness
+and derivation are different jobs: a field can be worth deriving and still wrong
+to derive when the answer is sitting in the other file.
+
+**`docs/skeleton-exchange.md`** is the evidence, and the reference for the
+property convention a DCC script reads: what is derived and what is carried, with
+the measurement behind each choice, the three shipped files that disagree with
+themselves, and how a collision filter is authored from scratch.
+
 ## What it does not find yet
 
 - **Voice.** No record names a dialogue file. `.fuz` and `.lip` paths are built
@@ -247,7 +279,7 @@ dotnet build
 dotnet test
 ```
 
-122 tests, a few seconds. They build plugins in memory and describe meshes rather
+143 tests, a few seconds. They build plugins in memory and describe meshes rather
 than reading any, so they run anywhere.
 
 `SKAssets.Content` restores NIFBX and HKSK from GitHub Packages, so building it
@@ -262,6 +294,9 @@ SKASSETS_SKYRIM_DATA="/path/to/Skyrim Special Edition/Data" dotnet test \
 
 SKASSETS_SKYRIM_DATA=... SKASSETS_HAVOK_MESHES=/path/to/loose/meshes dotnet test \
     --filter "FullyQualifiedName~MeshCorpus"       # 17,670 meshes, about twenty
+
+SKASSETS_SKYRIM_DATA=... dotnet test \
+    --filter "FullyQualifiedName~RoundTripCorpus"  # 45 skeletons, three seconds
 ```
 
 The second wants the Havok side as loose files, because the animation cache is
@@ -287,6 +322,19 @@ a plugin names should not be made to carry a NIF reader and a Havok library.
 - `Assets/` — what a record requires of the mesh it names, and the two checks
   that take a second file.
 - `Havok/` — the animation cache indexed by what a mesh can name.
+
+`src/SKAssets.Export` — the files as one scene. The heaviest of the three and the
+reason for the split: it carries NIFBX, HKFBX and HKSK together.
+
+- `SkeletonExchange` — a creature's two skeleton files, out to one FBX and back.
+- `Fbx/SceneMerge` — folding several documents into one without ending up with
+  one skeleton per document.
+- `Fbx/HavokBridge`, `Fbx/JointBridge` — a body and a joint said in the ragdoll's
+  vocabulary rather than the mesh's.
+- `Fbx/ExactPose` — the transforms carried beside the Euler channels a viewer
+  reads, because a quaternion does not survive the trip through them.
+- `Fbx/BoneUnion` — the nodes only one of the two files has, and which.
+- `Fbx/RagdollFilter` — a Havok collision filter, packed, unpacked and allocated.
 
 ## Licence
 
