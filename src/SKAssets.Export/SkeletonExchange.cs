@@ -125,6 +125,10 @@ namespace SKAssets.Export
 
             HavokBridge.Apply(document, names, naming, rig, bodies, derived);
 
+            // After the bodies are named, because a constraint is translated out of
+            // what they were named.
+            JointBridge.Apply(document, havok);
+
             if (havok is not null)
             {
                 // The mesh is nearly a superset of the rig and not quite: Havok has
@@ -136,6 +140,11 @@ namespace SKAssets.Export
 
                 if (carryFilters)
                     Mark(document, FiltersCarriedProperty, "1");
+
+                // The exact poses, beside the Euler channels a viewer needs. Without
+                // them a rig cannot come back as the rig that went out: 64 of 2,602
+                // vanilla bones survive the Euler conversion bit-identical.
+                ExactPose.Write(document, havok);
             }
 
             return document;
@@ -161,6 +170,9 @@ namespace SKAssets.Export
             SkeletonFile read = Marked(document, FiltersCarriedProperty)
                 ? parsed
                 : WithFilters(parsed);
+
+            read = ExactPose.Apply(read, document);
+            read = JointBridge.ApplyTo(read, document);
             IReadOnlyList<string>? order = ReadRigBones(document);
 
             if (order is null)
