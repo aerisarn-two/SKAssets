@@ -46,6 +46,9 @@ namespace SKAssets.Export.Fbx
     /// <item><b>Mass</b> inverts cleanly for 911 of 954.</item>
     /// <item><b>Quality type</b> is a constant remap: the mesh says
     /// <c>MO_QUAL_FIXED</c> and the ragdoll says <c>MOVING</c>, every time.</item>
+    /// <item><b>The collision filter</b> is allocated rather than read — see
+    /// <see cref="RagdollFilter"/>. The mesh's own fields are constant across the
+    /// whole game and carry nothing.</item>
     /// <item><b>Motion system</b> is <i>not</i> derivable. Every body in the game
     /// says <c>MO_SYS_BOX_INERTIA</c>, and 816 become Havok's box inertia while 138
     /// become sphere inertia. One value cannot predict two.</item>
@@ -82,13 +85,23 @@ namespace SKAssets.Export.Fbx
 
             var found = new Dictionary<string, BodyPhysics>(StringComparer.OrdinalIgnoreCase);
 
+            // The filter is allocated from the ragdoll's shape rather than read: the
+            // mesh's own layer, flags and group are the same on every body in the
+            // game -- 8, 0, 0 -- while the ragdoll's filter differs body by body,
+            // because the two identifier fields are relative rather than data.
+            Dictionary<string, uint> filters = RagdollFilter.Allocate(
+                RagdollFilter.BodiesOf(model), RagdollFilter.ParentsFrom(model));
+
             foreach (NifItem node in model.Blocks)
             {
                 if (model.GetRef(node, "Collision Object") is not { } collision) continue;
                 if (model.GetRef(collision, "Body") is not { } body) continue;
                 if (model.GetName(node) is not { Length: > 0 } name) continue;
 
-                found[name] = Of(model, body);
+                found[name] = Of(model, body) with
+                {
+                    CollisionFilter = filters.GetValueOrDefault(name),
+                };
             }
 
             return found;
