@@ -162,6 +162,153 @@ projects live under `meshes/actors/`.
 **A file list is relative to its project.** `character assets/skeleton.hkx` names
 188 different files across the 429 projects; the folder is what disambiguates.
 
+## Where the animation actually lives
+
+The role says what a mesh *is*. It does not say where its motion comes from, and
+the two do not line up the way the names suggest.
+
+These counts come from a different sweep from the rest of this document and have a
+different denominator: **every NIF in the base-game archives, 22,240 of them**,
+rather than the 17,670 a record names. No DLC archive was present on the install
+they were taken from. They are not comparable with the tables above and are not a
+correction to them — a mesh nothing names is still counted here.
+
+### A Gamebryo animation is usually not a clip
+
+Of the 1,234 meshes that classify as `AnimatedMesh`:
+
+| Sequences carried | Meshes |
+| ---: | ---: |
+| none | **921** |
+| one | 52 |
+| two or three | 256 |
+| four to ten | 5 |
+
+The largest group carries **no named sequence at all**. They qualify as animated
+because they hold time controllers, not a controller manager: a mill wheel that
+turns, a texture that flips, an alpha that pulses. There is nothing to select and
+no clip to name, so an FBX gets one stack or none.
+
+At the other end, 261 carry more than one and the most on any single mesh is
+seven, in `meshes/magic/invisfxhand01.nif`. Doors are prominent among them —
+`volunruudrightaxedoor`, `seruinsdoortemple01` and `riftenrwdoorspecial01` each
+carry four — but so does `dwesoulgemcontainer01`, and so does a user-interface
+dome. **Whether the multi-sequence case belongs to doors specifically has not been
+measured**; the naming is suggestive and that is all.
+
+A controller manager and controller sequences always travel together: 1,288 meshes
+have a manager and exactly 1,288 have sequences.
+
+### A behaviour graph is often a trigger, not a source
+
+**839 meshes carry a behaviour graph *and* their own controller sequences** — 69%
+of the 1,210 that name a graph at all. Havok and Gamebryo are not alternatives per
+asset; they routinely run in the same file.
+
+What the graphs are is the point:
+
+```
+1stpersonelderscrollhandattach.nif  [1 seq] -> GenericBehaviors\StagesNoLoops\StagesNoLoops.hkx
+dlc1protoswingingbridge.nif         [2 seq] -> GenericBehaviors\StagesNoLoops\StagesNoLoops.hkx
+magicanomalyspawner.nif             [2 seq] -> GenericBehaviors\BlendBetweenStatesVariable\...
+fxgreybeardshoutfaas.nif            [4 seq] -> GenericBehaviors\waitPlayIdleAway\...
+werebear_transformation.nif         [1 seq] -> Magic\IdleOnLoad.hkx
+fxsteamsphereskin.nif                       -> GenericBehaviors\Autoplay.hkx
+```
+
+`StagesNoLoops`, `waitPlayIdleAway`, `Autoplay`, `IdleOnLoad`,
+`BlendBetweenStatesVariable` name *control patterns*, not animations. The graph is
+a small state machine deciding **when** to play the sequences the mesh already
+holds; the animation data never leaves the NIF. That is consistent with what a
+prop project's cache entry looks like — a file list, no clips.
+
+So "the animation is in the project" is true of some props and false of most.
+Which it is has to be read off the mesh, not assumed from the role.
+
+### A prop can be skinned, and then stops looking like a prop
+
+119 meshes are skinned to an external skeleton **and** name a behaviour graph, and
+they are not props in any ordinary sense:
+
+```
+meshes/actors/dlc01/sabrecat/dlc1sabrecat.nif       -> DLC01\SharedBehaviors\BlackreachCreatures\...
+meshes/actors/dlc01/dragon/dragonpurplebloodwingl.nif -> UniqueBehaviors\DragonBloodWingL\...
+meshes/actors/dwarvenspherecenturion/character assets/fxsteamsphereskin.nif -> GenericBehaviors\Autoplay.hkx
+```
+
+`NifRoles.Of` tests `HasExternalSkeleton` before `BehaviorGraph`, so every one of
+them classifies as `SkinnedAttachment` and the role never admits it is
+Havok-driven. That is 119 assets an exporter keyed on `NifRole` would fetch no
+project for.
+
+It also puts a question against the invariant above. *A behaviour graph resolves to
+a registered project* was measured over meshes a record names, and *every one of
+those is a prop*; a sabrecat naming `BlackreachCreatures` may still satisfy that —
+"prop" there means how the cache registers the project, not what the mesh depicts —
+but **it has not been checked**, and an exporter that decides where to fetch
+animation from should not rely on it until it has been.
+
+### And some meshes animate with no animation in them at all
+
+The root block type is its own signal, and there are only three besides the usual
+two. Over the same 22,240 archive meshes:
+
+| Root | Meshes | Carries | Classifies as |
+| --- | ---: | --- | --- |
+| `BSFadeNode` | 18,432 | — | everything |
+| `NiNode` | 3,357 | — | everything |
+| `BSLeafAnimNode` | 287 | shapes 287, collision 120, skinned 4, sequences 4 | `StaticGeometry` 281 |
+| `BSMasterParticleSystem` | 93 | shapes 1 | `Effect` **93 / 93** |
+| `BSTreeNode` | 71 | shapes 71, collision 71, skinned 71 | `SkinnedMesh` **71 / 71** |
+
+Two of the three decide the role outright, and the third gets 281 of 287. A root
+type is a stronger predictor of what a mesh is than the record that names it.
+
+The interesting pair is `BSLeafAnimNode` and `BSTreeNode` — pines and gum trees,
+and cloth too: the Nightingale banners are `BSLeafAnimNode`. **Between them, 358
+meshes animate in the engine and carry nothing that says so.** Not one names a
+behaviour graph; four of the 358 hold a sequence. The motion is leaf sway, trunk
+bend and cloth ripple, driven by the shader from the wind, and the only thing in
+the file that asks for it is the class of the root block.
+
+So the classifier calls 281 of them `StaticGeometry` and 71 `SkinnedMesh`, both
+listed above as *complete on its own*. That is true of a round trip and false of the
+question "does this move". The distinction matters for export in one narrow,
+unforgiving way: such a mesh needs no animation exported, and **its root block type
+has to come back exactly**, or a pine comes home as a `BSFadeNode` and the forest
+stops moving. `FbxNodeType` in NIFBX carries the class for this reason, and keeps a
+per-root `BSXFlags` table in which `BSTreeNode` is `0x8080E` where everything else
+is `0x8000E`.
+
+It holds. Four samples of each of the five root types were taken through
+`NifToFbx` and back through `FbxToNif`, and **all twenty came back as the class
+they went in as** — `BSLeafAnimNode`, `BSTreeNode` and `BSMasterParticleSystem`
+included. The concern is real and the code already answers it.
+
+Counting these, motion in this game comes from five places, and only two of them put
+animation data in a file that can be exported:
+
+| | Where the motion is |
+| --- | --- |
+| an actor's clips | the Havok project, named by RACE |
+| a prop's clips | the Havok project, named by the mesh's BGED |
+| a named sequence | the NIF, played by the engine or triggered by a generic graph |
+| an always-on controller | the NIF, running forever |
+| leaf and tree sway | nowhere — the shader, keyed on the root block type |
+
+### What follows for a classifier
+
+`NifRole` is one axis collapsing two independent facts. For classification that is
+fine. For deciding what to export it is not, because the two questions have
+different answers:
+
+| | |
+| --- | --- |
+| **where the motion comes from** | a Havok project via RACE, a Havok project via BGED, the NIF's own sequences, an always-on controller, the shader via the root block type, or several of these at once |
+| **what the geometry needs** | rigid nodes, a skin to bones the file carries, or a skin to a skeleton it does not |
+
+Both are readable from `NifProfile` directly. Neither is recoverable from the role.
+
 ## What this means for FBX
 
 The point of classifying a mesh is knowing what a converter has to be given, and
@@ -179,10 +326,12 @@ what it has to be checked against. By role:
   `skeleton.hkx` decides which bones animations drive, the mesh decides what the
   skin binds to, and they have to agree by name. A round trip that renames or
   re-cases a bone breaks every skin and every animation that referenced it.
-- **HavokProp** — the animation is not in the mesh at all, so exporting the mesh
-  alone silently drops the motion. The clips are in the project, which HKSK reads
-  and HKFBX converts; a complete FBX for a windmill is the mesh plus the
-  project's clips, and an import has to put both back.
+- **HavokProp** — the mesh names a project, and what the project contributes
+  varies. For 839 of the 1,210 meshes that name one, the graph is a trigger and
+  the animation is the mesh's own sequences; for the rest the motion is in the
+  project and exporting the mesh alone silently drops it. A complete FBX is the
+  mesh plus whatever the project actually holds, which means reading the project
+  rather than assuming — see *Where the animation actually lives*.
 
 The direction this leaves open is the reverse lookup: what a mesh refers to *in
 turn* — its textures, and the meshes an addon node pulls in. That is a sweep of
