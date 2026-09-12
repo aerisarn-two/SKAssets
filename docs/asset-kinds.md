@@ -285,6 +285,55 @@ It holds. Four samples of each of the five root types were taken through
 they went in as** — `BSLeafAnimNode`, `BSTreeNode` and `BSMasterParticleSystem`
 included. The concern is real and the code already answers it.
 
+#### The plugin side of it
+
+A mesh that animates in the shader is invisible to a sweep of the records — almost.
+Joining every record that names a model against the root of the mesh it names:
+
+| Record | `BSTreeNode` | `BSLeafAnimNode` | of all its meshes |
+| --- | ---: | ---: | ---: |
+| TREE | **72** | 172 | 285 |
+| STAT | 0 | 19 | 12,470 |
+| ACTI | 0 | 4 | 1,803 |
+| CONT | 0 | 1 | 600 |
+
+**Every `BSTreeNode` in the game is named by a TREE record**, and by nothing else.
+That direction is exact. The other direction is good but not exact: 244 of the 285
+meshes a TREE names are tree-rooted, and the remaining 41 are plain `BSFadeNode` —
+trees that do not move.
+
+The record's **header flags carry nothing**. Every TREE record is `0x0` whatever its
+mesh's root, and the `0x10800` that shows up on four leaf-animated statics is the
+snow shader, sitting on 1,676 `BSFadeNode` statics as well. There is no *has tree*
+bit to read.
+
+And `BSLeafAnimNode` is not a tree class. 24 of its 196 record-named instances
+belong to STAT, ACTI and CONT:
+
+```
+STAT   NightingaleBannerAnim04   Clutter\Nightingale\...          cloth
+ACTI   TreeFloraNirnrootRed01    Plants\FloraNirnroot01Red.nif     a glowing root
+CONT   ccBGS_RootHollowedStump   ...\RootStumpContainer01.nif      a stump you loot
+STAT   SwordFernCluster03snow    Landscape\Plants\...             ferns
+```
+
+It means *wind-animated in the shader*, and trees are only its commonest use.
+
+So the plugin side gives a strong positive and no negative:
+
+| | |
+| --- | --- |
+| `BSTreeNode` implies a TREE record | exact, 72 / 72 |
+| a TREE record implies shader animation | 244 / 285 |
+| a STAT, ACTI or CONT implies no shader animation | **false**, 24 counter-examples |
+
+A classifier can special-case TREE and save itself a read. It cannot use the absence
+of TREE to rule the case out, because a banner and a fern are statics that sway and
+the record never says so. The root block stays the only authority.
+
+Measured over the 22,196 of 22,240 meshes whose path resolved, and only over records
+that expose a model — a mesh reached through some other field is not counted.
+
 Counting these, motion in this game comes from five places, and only two of them put
 animation data in a file that can be exported:
 
