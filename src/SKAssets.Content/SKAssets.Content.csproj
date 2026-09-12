@@ -37,7 +37,7 @@
       NIFBX's. HKSK is the other side of the same asset: the Havok project a mesh
       names, the skeleton it rides, and the animation cache that has to agree.
     -->
-    <PackageReference Include="NIFBX" Version="1.0.1" />
+    <PackageReference Include="NIFBX" Version="1.1.0" />
     <PackageReference Include="HKSK" Version="2.0.0" />
   </ItemGroup>
 
