@@ -257,10 +257,11 @@ The clips go into the same scene, one animation stack each:
 ClipReport clips = ClipExchange.AddClips(scene, havok.Rig, project);
 ```
 
-Over 43 of the game's 49 actor projects that is 2,114 stacks, every one of them
-driving the whole rig, with none bound to nothing, missing or undecodable. The
-player and the draugr are left to the caller rather than done by default: the cost
-is linear and the falmer's 122 clips are already 110 MB.
+Over 46 of the game's 49 actor projects that is 2,733 stacks, every one of them
+driving the whole rig, with none bound to nothing, missing or undecodable. The two
+player projects are left to the caller rather than done by default: the cost is
+linear and the draugr's 216 clips are already 187 MB, so the player's 1,656 is
+about a gigabyte and a half.
 
 **`docs/animation-export.md`** is that half: why root motion comes from the cache
 and not from the animation file, why a slot and a clip are not the same thing, and
@@ -294,7 +295,7 @@ dotnet build
 dotnet test
 ```
 
-143 tests, a few seconds. They build plugins in memory and describe meshes rather
+146 tests, a few seconds. They build plugins in memory and describe meshes rather
 than reading any, so they run anywhere.
 
 `SKAssets.Content` restores NIFBX and HKSK from GitHub Packages, so building it

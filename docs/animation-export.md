@@ -21,35 +21,56 @@ obviously right. For the player it is not: see the measurements below.
 
 ## What it does over the shipped game
 
-43 of the 49 actor projects, every slot each one has:
+46 of the 49 actor projects, every slot each one has:
 
 | | |
 | --- | ---: |
-| Actors exported | 43 |
-| Animation stacks | 2,114 |
-| …that the cache records as travelling | 1,266 |
+| Actors exported | 46 |
+| Animation stacks | 2,733 |
+| …that the cache records as travelling | 1,689 |
 | **Inert stacks** (bound to no bones) | **0** |
 | Animations the project named and the folder lacked | 0 |
 | Animations that would not decode | 0 |
 
-Every stack bound the **whole** rig — for each of the 43, the minimum and maximum
-bones bound across its clips are both the rig's own bone count.
+Every stack bound the **whole** rig — for each of the 46, the fewest and the most
+bones bound across its clips are both that rig's own bone count.
 
-The six left out are the ones where the answer is about size rather than
-correctness: `DragonProject` (187 slots), `DraugrProject` and
-`DraugrSkeletonProject` (216 each), `FirstPerson` (869), and `DefaultFemale` and
-`DefaultMale` (1,656 each). The cost is linear and it is not small — the falmer's
-122 clips are 110 MB, and the 43 together are 1.4 GB — so one FBX holding all
-1,656 of the player's clips is on the order of a gigabyte and a half. That is a
-decision somebody should make on purpose rather than discover, which is why
-`slots` is a parameter.
+### What it costs
+
+Linear in clips, and not small. Decompressing the spline curves dominates
+everything else, and on Linux it runs Havok's own codec through mopper under Wine:
+
+| | Clips | Time | Size |
+| --- | ---: | ---: | ---: |
+| Hare | 18 | 0.4 s | 8 MB |
+| Falmer | 122 | 13 s | 110 MB |
+| Draugr | 216 | 60 s | 187 MB |
+| 46 actors together | 2,733 | ~7 min | 2.5 GB |
+
+So the player's 1,656 slots in one file is on the order of a gigabyte and a half
+and some minutes — a decision somebody should make on purpose rather than
+discover, which is why `slots` is a parameter and not an assumption.
+
+### The three that are not in the table
+
+`DefaultMale` and `DefaultFemale` (1,656 slots each) were left out for the size
+above, not for any difficulty. The third is a real gap:
+
+- **`FirstPerson`** (869 slots) has a Havok rig — `skeletonfirst.hkx` — and **no
+  mesh skeleton at all**. There is no `.nif` in the folder, because the
+  first-person arms are skinned attachments rigged to it from elsewhere. A scene
+  for it has to be built from the rig alone.
+- **`DefaultFemale`** is a naming trap rather than a gap: its mesh is
+  `skeleton_female.nif`, beside `skeleton_female.hkx`. Pairing a rig with "the
+  `skeleton.nif` in the same folder" finds nothing; pairing on the rig's own stem
+  finds it. That rule holds for 47 of the 49 and fails only here and above.
 
 ## The mesh has animation of its own
 
 An actor's `skeleton.nif` can carry bone animation directly, with **no
 `NiControllerSequence` and no `NiControllerManager` around it** — just
 `NiTransformController`s hanging off the nodes. Not one actor skeleton in the game
-holds a sequence, and 17 of the 43 hold controllers: the deer's has 39 of them,
+holds a sequence, and 17 of the 46 hold controllers: the deer's has 39 of them,
 113 curve nodes' worth, and NIFBX writes them as a stack of their own.
 
 That is why those 17 come back with one stack more than `AddClips` reported, and
@@ -155,10 +176,6 @@ Two stacks of one name is a file whose clips a reader cannot tell apart, so
 used: a stack name is read off a menu, and the paths are long.
 
 ## Running it
-
-Decompressing a clip runs Havok's own spline codec through mopper, under Wine on
-Linux, so this is the slow part of any export — the cost is per clip and it
-dominates everything else.
 
 ```
 SKASSETS_SKYRIM_DATA="/path/to/Data" SKASSETS_HAVOK_MESHES=/path/to/loose/meshes \
