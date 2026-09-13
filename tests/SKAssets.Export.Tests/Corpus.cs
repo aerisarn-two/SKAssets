@@ -128,6 +128,23 @@ namespace SKAssets.Export.Tests
         }
     }
 
+    /// <summary>
+    /// Skips a test that needs a creature's files side by side on disk.
+    /// </summary>
+    /// <remarks>
+    /// Not the same as having the archives. A creature is a folder — the skeleton,
+    /// the bodies beside it, the animations under it — and a test about the folder
+    /// cannot be answered by two archives that each hold half of one.
+    /// </remarks>
+    public sealed class CreatureFactAttribute : FactAttribute
+    {
+        public CreatureFactAttribute()
+        {
+            if (Corpus.ExtractedCreatures().Count == 0)
+                Skip = $"set {Corpus.HavokVar} to an extracted meshes folder holding the creatures";
+        }
+    }
+
     /// <summary>Whether Havok's spline codec can actually be run here.</summary>
     internal static class Mopper
     {
