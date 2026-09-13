@@ -5,6 +5,7 @@ using HKFBX.Model;
 using HKSK.Cache;
 using HKSK.Model;
 using LeanMeshIO;
+using NIFSharp;
 using SKAssets.Export;
 using Xunit;
 
@@ -338,6 +339,137 @@ namespace SKAssets.Export.Tests
             Assert.Equal(animations, project.Animations.Count);
         }
 
+        /// <summary>
+        /// The whole creature, in one scene and back out: mesh, rig, ragdoll,
+        /// clips and cache.
+        /// </summary>
+        /// <remarks>
+        /// The other tests here each hold one half. This is the thing itself, the
+        /// way a creature is actually authored -- everything into a single FBX, a
+        /// DCC tool in the middle, and the files the game reads out the other side
+        /// -- and it is the only test where the halves can interfere with each
+        /// other. They can: adding twenty animation stacks to a scene puts curves
+        /// on the very nodes whose exact transforms the skeleton exchange carries,
+        /// and nothing else would notice if one displaced the other.
+        ///
+        /// Four claims, in the order a creature would break them:
+        ///
+        /// <list type="number">
+        /// <item>the skeleton.hkx comes back byte for byte, clips in the scene or
+        /// not;</item>
+        /// <item>the skeleton.nif comes back with every block it had, the ragdoll
+        /// constraints among them;</item>
+        /// <item>every clip comes back animating what it animated;</item>
+        /// <item>and the cache still addresses them the way it did.</item>
+        /// </list>
+        ///
+        /// The chicken, because the whole set has to be compressed twenty times
+        /// through Havok's codec and the draugr's 216 clips would make this a test
+        /// nobody runs.
+        /// </remarks>
+        [ClipCorpusFact]
+        public void AWholeCreatureGoesOutAsOneSceneAndComesBackAsItsFiles()
+        {
+            using var work = new Workspace();
+            ActorProject project = work.Chicken();
+
+            string havokPath = Path.Combine(work.Creature, "character assets", "skeleton.hkx");
+            string meshPath = Path.Combine(work.Creature, "character assets", "skeleton.nif");
+
+            Assert.True(File.Exists(meshPath), $"no skeleton.nif at {meshPath}");
+
+            byte[] originalHavok = File.ReadAllBytes(havokPath);
+            SkeletonFile havok = HkxSkeletonFile.Read(havokPath);
+
+            var db = NifXmlDatabase.LoadEmbedded();
+            NifModel mesh = NifModel.Load(meshPath, db);
+
+            int blocks = mesh.Blocks.Count;
+            int constraints = mesh.Blocks.Count(
+                b => b.Def.Name.EndsWith("Constraint", StringComparison.Ordinal));
+
+            var codec = new MopperAnimationCodec();
+            var curves = new Dictionary<string, SampledAnimation>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (AnimationSlot slot in project.Animations)
+                if (project.AnimationPath(slot) is { } path && File.Exists(path))
+                    curves[slot.StoredName] = Decoded(path, codec);
+
+            var slots = project.Animations.ToDictionary(
+                a => a.StoredName, a => (a.Index, a.Motion?.Travel ?? 0f), StringComparer.OrdinalIgnoreCase);
+
+            // Out: one scene holding all of it.
+            FbxDocument scene = SkeletonExchange.Export(mesh, havok);
+            ClipReport exported = ClipExchange.AddClips(scene, havok.Rig, project, codec: codec);
+
+            Assert.Empty(exported.Unreadable);
+            Assert.Empty(exported.Inert);
+
+            // Through a file, because that is what a DCC tool hands back.
+            string fbx = Path.Combine(work.Folder, "chicken.fbx");
+            scene.Save(fbx);
+
+            FbxDocument back = FbxDocument.Load(fbx);
+
+            // And in: the three files the game reads.
+            NifModel rebuiltMesh = SkeletonExchange.ImportMesh(back, db);
+
+            string rebuiltHavok = Path.Combine(work.Folder, "skeleton.hkx");
+            HkxSkeletonFile.Write(havokPath, SkeletonExchange.ImportHavok(back), rebuiltHavok);
+
+            ImportReport imported = ClipExchange.ImportClips(back, project, codec);
+            Assert.Empty(imported.Failed);
+
+            work.Cache.Save();
+
+            // 1: the rig, the ragdoll and the mappers, to the byte.
+            Assert.Equal(originalHavok, File.ReadAllBytes(rebuiltHavok));
+
+            // 2: the mesh, with the ragdoll it describes.
+            Assert.Equal(blocks, rebuiltMesh.Blocks.Count);
+            Assert.Equal(constraints, rebuiltMesh.Blocks.Count(
+                b => b.Def.Name.EndsWith("Constraint", StringComparison.Ordinal)));
+
+            // 3: the animations.
+            Assert.Equal(curves.Count, imported.Clips.Count);
+
+            foreach (ImportedClip clip in imported.Clips)
+            {
+                SampledAnimation was = curves[clip.StoredName];
+                SampledAnimation now = Decoded(clip.Path!, codec);
+
+                Assert.Equal(was.FrameCount, now.FrameCount);
+                Assert.Equal(was.TrackCount, now.TrackCount);
+
+                for (int frame = 0; frame < was.FrameCount; frame++)
+                for (int track = 0; track < was.TrackCount; track++)
+                {
+                    BoneTransform a = was[frame, track];
+                    BoneTransform b = now[frame, track];
+
+                    Assert.True((a.Translation - b.Translation).Length() < 1e-1,
+                        $"{clip.Stack} frame {frame} track {track} moved");
+
+                    Assert.True(
+                        Math.Min((a.Rotation - b.Rotation).Length(), (a.Rotation + b.Rotation).Length()) < 1e-2,
+                        $"{clip.Stack} frame {frame} track {track} turned");
+                }
+            }
+
+            // 4: and the cache that addresses them.
+            ActorProject after = SkyrimCache.Load(work.Meshes).OpenActor("ChickenProject")!;
+
+            Assert.Equal(slots.Count, after.Animations.Count);
+
+            foreach (AnimationSlot slot in after.Animations)
+            {
+                (int index, float travel) = slots[slot.StoredName];
+
+                Assert.Equal(index, slot.Index);
+                Assert.Equal(travel, slot.Motion?.Travel ?? 0f, 2);
+            }
+        }
+
         /// <summary>Two frames of the rig at rest, which is enough to be a stack.</summary>
         private static SampledAnimation Flat(Skeleton rig)
         {
@@ -388,6 +520,9 @@ namespace SKAssets.Export.Tests
             public string Meshes { get; }
 
             public SkyrimCache Cache { get; }
+
+            /// <summary>The creature's own folder inside the copy.</summary>
+            public string Creature => Path.Combine(Meshes, "actors", "ambient", "chicken");
 
             public ActorProject Chicken() =>
                 Cache.OpenActor("ChickenProject")
