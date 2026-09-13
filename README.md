@@ -251,6 +251,21 @@ property convention a DCC script reads: what is derived and what is carried, wit
 the measurement behind each choice, the three shipped files that disagree with
 themselves, and how a collision filter is authored from scratch.
 
+The clips go into the same scene, one animation stack each:
+
+```csharp
+ClipReport clips = ClipExchange.AddClips(scene, havok.Rig, project);
+```
+
+Over 43 of the game's 49 actor projects that is 2,114 stacks, every one of them
+driving the whole rig, with none bound to nothing, missing or undecodable. The
+player and the draugr are left to the caller rather than done by default: the cost
+is linear and the falmer's 122 clips are already 110 MB.
+
+**`docs/animation-export.md`** is that half: why root motion comes from the cache
+and not from the animation file, why a slot and a clip are not the same thing, and
+the one number to check after an export.
+
 ## What it does not find yet
 
 - **Voice.** No record names a dialogue file. `.fuz` and `.lip` paths are built
@@ -335,6 +350,7 @@ reason for the split: it carries NIFBX, HKFBX and HKSK together.
   reads, because a quaternion does not survive the trip through them.
 - `Fbx/BoneUnion` — the nodes only one of the two files has, and which.
 - `Fbx/RagdollFilter` — a Havok collision filter, packed, unpacked and allocated.
+- `ClipExchange` — the creature's animations, one stack each, over that skeleton.
 
 ## Licence
 
