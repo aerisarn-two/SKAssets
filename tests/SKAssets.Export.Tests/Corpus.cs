@@ -68,4 +68,51 @@ namespace SKAssets.Export.Tests
                 Skip = $"set {Corpus.DataVar} and {Corpus.HavokVar} to run this";
         }
     }
+
+    /// <summary>
+    /// Skips a test that needs the Havok half and Havok's own codec, but no mesh.
+    /// </summary>
+    /// <remarks>
+    /// A creature's animations live entirely on that side -- the cache, the
+    /// project, the packfiles and the rig in skeleton.hkx -- so a clip test needs
+    /// no archive and should not ask for one: the extracted folder is a great deal
+    /// easier to have than a copy of the game.
+    ///
+    /// Compressing a clip is Havok's own spline encoder through mopper.exe, a
+    /// Win32 binary, so off Windows it also wants Wine. The file being present says
+    /// nothing -- Mopper.Native copies it to the output on every platform,
+    /// including ones that cannot run it.
+    /// </remarks>
+    public sealed class ClipCorpusFactAttribute : FactAttribute
+    {
+        public ClipCorpusFactAttribute()
+        {
+            if (Corpus.Havok is null) Skip = $"set {Corpus.HavokVar} to an extracted meshes folder to run this";
+            else if (!Mopper.Available) Skip = "mopper.exe cannot be run here (not found, or no Wine off Windows)";
+        }
+    }
+
+    /// <summary>Whether Havok's spline codec can actually be run here.</summary>
+    internal static class Mopper
+    {
+        public static bool Available { get; } = Find() is not null && CanExecute();
+
+        private static string? Find()
+        {
+            string beside = Path.Combine(AppContext.BaseDirectory, "mopper.exe");
+            if (File.Exists(beside)) return beside;
+
+            return (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                .Split(Path.PathSeparator)
+                .Select(folder => Path.Combine(folder, "mopper.exe"))
+                .FirstOrDefault(File.Exists);
+        }
+
+        // Windows runs the 32-bit binary through WOW64; everything else needs Wine.
+        private static bool CanExecute() =>
+            OperatingSystem.IsWindows() ||
+            (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                .Split(Path.PathSeparator)
+                .Any(folder => File.Exists(Path.Combine(folder, "wine")));
+    }
 }
