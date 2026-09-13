@@ -400,6 +400,7 @@ reason for the split: it carries NIFBX, HKFBX and HKSK together.
   and back out into packfiles and cache entries.
 - `CreatureExchange` — all of the above for one creature, from its folder, and
   back apart into the files it came from.
+- `AssetRecognition` — what a path is, by opening it rather than by its name.
 
 ## Licence
 
@@ -411,9 +412,9 @@ Published to GitHub Packages. With a `nuget.config` pointing at the feed and
 `GITHUB_USERNAME` and `GITHUB_TOKEN` set (the token needs `read:packages`):
 
 ```xml
-<PackageReference Include="SKAssets" Version="0.1.7" />          <!-- what a plugin names -->
-<PackageReference Include="SKAssets.Content" Version="0.1.7" />  <!-- what those files are -->
-<PackageReference Include="SKAssets.Export" Version="0.1.7" />   <!-- those files as one scene -->
+<PackageReference Include="SKAssets" Version="0.1.8" />          <!-- what a plugin names -->
+<PackageReference Include="SKAssets.Content" Version="0.1.8" />  <!-- what those files are -->
+<PackageReference Include="SKAssets.Export" Version="0.1.8" />   <!-- those files as one scene -->
 ```
 
 All three carry the same version and are released together, because each is
