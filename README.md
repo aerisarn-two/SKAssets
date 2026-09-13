@@ -364,10 +364,12 @@ Published to GitHub Packages. With a `nuget.config` pointing at the feed and
 `GITHUB_USERNAME` and `GITHUB_TOKEN` set (the token needs `read:packages`):
 
 ```xml
-<PackageReference Include="SKAssets" Version="0.1.0" />          <!-- what a plugin names -->
-<PackageReference Include="SKAssets.Content" Version="0.1.0" />  <!-- what those files are -->
+<PackageReference Include="SKAssets" Version="0.1.2" />          <!-- what a plugin names -->
+<PackageReference Include="SKAssets.Content" Version="0.1.2" />  <!-- what those files are -->
+<PackageReference Include="SKAssets.Export" Version="0.1.2" />   <!-- those files as one scene -->
 ```
 
-Both carry the same version and are released together, because `SKAssets.Content`
-is built against a particular `SKAssets` and nothing else makes that true at
-restore time. Taking the first alone brings in Mutagen and nothing more.
+All three carry the same version and are released together, because each is
+built against a particular copy of the one below it and nothing else makes that
+true at restore time. Taking the first alone brings in Mutagen and nothing more;
+the third brings NIFBX, HKFBX and HKSK with it.

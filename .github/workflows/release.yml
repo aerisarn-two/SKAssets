@@ -115,15 +115,15 @@ jobs:
           -p:RepositoryUrl=https://github.com/${{ github.repository }}
 
       #
-      # Both packages carry the same version. They are released together because
-      # SKAssets.Content is built against this SKAssets and nothing makes that
+      # All three packages carry the same version. They are released together
+      # because each is built against the one below it and nothing makes that
       # true at restore time otherwise.
       #
       - name: Pack
         run: |
           set -euo pipefail
 
-          for project in src/SKAssets/SKAssets.csproj src/SKAssets.Content/SKAssets.Content.csproj; do
+          for project in src/SKAssets/SKAssets.csproj src/SKAssets.Content/SKAssets.Content.csproj src/SKAssets.Export/SKAssets.Export.csproj; do
             dotnet pack "$project" --no-build -c Release \
               -p:Version=${{ steps.version.outputs.version }} \
               -p:RepositoryUrl=https://github.com/${{ github.repository }} \
@@ -137,8 +137,9 @@ jobs:
           set -euo pipefail
           ls -l src/SKAssets/bin/Release/net9.0/SKAssets.dll
           ls -l src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
+          ls -l src/SKAssets.Export/bin/Release/net9.0/SKAssets.Export.dll
           ls -l artifacts/*.nupkg
-          test "$(ls artifacts/*.nupkg | wc -l)" -eq 2
+          test "$(ls artifacts/*.nupkg | wc -l)" -eq 3
 
       - uses: actions/upload-artifact@v4
         with:
@@ -146,6 +147,7 @@ jobs:
           path: |
             src/SKAssets/bin/Release/net9.0/SKAssets.dll
             src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
+            src/SKAssets.Export/bin/Release/net9.0/SKAssets.Export.dll
             artifacts/*.nupkg
           if-no-files-found: error
 
@@ -177,4 +179,5 @@ jobs:
           files: |
             src/SKAssets/bin/Release/net9.0/SKAssets.dll
             src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
+            src/SKAssets.Export/bin/Release/net9.0/SKAssets.Export.dll
             artifacts/*.nupkg
