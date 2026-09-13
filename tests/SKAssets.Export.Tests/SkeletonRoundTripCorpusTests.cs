@@ -167,6 +167,40 @@ namespace SKAssets.Export.Tests
         private static int Constraints(NifModel model) =>
             model.Blocks.Count(b => b.Def.Name.EndsWith("Constraint", StringComparison.Ordinal));
 
+        /// <summary>The pairs an extracted tree already holds side by side.</summary>
+        private static IReadOnlyList<Pair> FromFolders(IReadOnlyList<string> folders)
+        {
+            var pairs = new List<Pair>();
+            string work = Directory.CreateTempSubdirectory("skpairs").FullName;
+
+            try
+            {
+                foreach (string folder in folders)
+                {
+                    string havok = Path.Combine(folder, "skeleton.hkx");
+
+                    // A skeleton with no bodies has no ragdoll, and the ragdoll is
+                    // what this exercises.
+                    try
+                    {
+                        if (HkxSkeletonFile.Read(havok).Bodies.Count == 0)
+                            continue;
+                    }
+                    catch (Exception e) when (e is not OutOfMemoryException) { continue; }
+
+                    pairs.Add(new Pair(
+                        folder,
+                        File.ReadAllBytes(Path.Combine(folder, "skeleton.nif")),
+                        File.ReadAllBytes(havok)));
+                }
+            }
+            finally { Directory.Delete(work, recursive: true); }
+
+            Assert.True(pairs.Count >= 45, $"only {pairs.Count} creatures carried a ragdoll");
+
+            return pairs;
+        }
+
         /// <summary>
         /// Every folder holding both a skeleton.nif and a skeleton.hkx with a
         /// ragdoll in it — 45 of them in the shipped game.
@@ -177,13 +211,20 @@ namespace SKAssets.Export.Tests
         /// </remarks>
         private static IReadOnlyList<Pair> Pairs()
         {
-            // The attribute has already skipped the test when this is absent.
-            string data = Corpus.Data!;
-
             lock (Gate)
             {
                 if (_cached is not null)
                     return _cached;
+
+                // An extracted tree first, where there is one: both halves of a
+                // creature are already side by side in it, and it does not need the
+                // drive holding the game to be plugged in. The archives are the
+                // fallback and the original source of that tree.
+                if (Corpus.ExtractedCreatures() is { Count: > 0 } folders)
+                    return _cached = FromFolders(folders);
+
+                // The attribute has already skipped the test when this is absent.
+                string data = Corpus.Data!;
 
                 var meshes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
                 var rigs = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);

@@ -186,8 +186,7 @@ namespace SKAssets.Export.Tests
         /// </summary>
         private static IReadOnlyList<(ActorProject Project, SkeletonFile Havok, byte[] Mesh)> Opened()
         {
-            // The attribute has already skipped the test when either is absent.
-            string data = Corpus.Data!;
+            // The attribute has already skipped the test when this is absent.
             string loose = Corpus.Havok!;
 
             lock (Gate)
@@ -197,7 +196,20 @@ namespace SKAssets.Export.Tests
 
                 var meshes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
 
-                foreach (string archive in Directory.GetFiles(data, "*.bsa"))
+                // The mesh beside the rig, where the tree has it. A creature's two
+                // halves ship in different archives, so an extracted tree holding
+                // both is the easier corpus to have and the archives are the
+                // fallback that made it.
+                foreach (string folder in Corpus.ExtractedCreatures())
+                {
+                    string relative = Path.GetRelativePath(loose, folder)
+                        .Replace('\\', '/').ToLowerInvariant();
+
+                    meshes[$"meshes/{relative}/skeleton.nif"] =
+                        File.ReadAllBytes(Path.Combine(folder, "skeleton.nif"));
+                }
+
+                foreach (string archive in Directory.GetFiles(Corpus.Data ?? loose, "*.bsa"))
                 {
                     // An archive this test cannot read is not its subject.
                     try
@@ -207,7 +219,7 @@ namespace SKAssets.Export.Tests
                             string path = entry.Path.Replace('\\', '/').ToLowerInvariant();
 
                             if (path.EndsWith("/skeleton.nif", StringComparison.Ordinal))
-                                meshes[path] = entry.GetBytes();
+                                meshes.TryAdd(path, entry.GetBytes());
                         }
                     }
                     catch (Exception e) when (e is not OutOfMemoryException) { }
@@ -228,7 +240,7 @@ namespace SKAssets.Export.Tests
 
                     Assert.True(
                         meshes.TryGetValue($"meshes/{relative}/skeleton.nif", out byte[]? mesh),
-                        $"no skeleton.nif in the archives for meshes/{relative}");
+                        $"no skeleton.nif beside or in the archives for meshes/{relative}");
 
                     opened.Add((project, HkxSkeletonFile.Read(project.SkeletonPath!), mesh!));
                 }
