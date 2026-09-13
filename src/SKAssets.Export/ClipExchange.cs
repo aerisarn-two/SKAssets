@@ -50,6 +50,35 @@ namespace SKAssets.Export
             + (Inert.Count > 0 ? $", {Inert.Count} inert" : "");
     }
 
+    /// <summary>One clip, as it came back out of the scene.</summary>
+    /// <param name="Stack">The stack it was read from.</param>
+    /// <param name="StoredName">The animation as the project stores it.</param>
+    /// <param name="CacheIndex">Its position in the character's animation list.</param>
+    /// <param name="Path">The packfile written, as the project names it.</param>
+    public sealed record ImportedClip(string Stack, string StoredName, int CacheIndex, string? Path)
+    {
+        public override string ToString() => $"{Stack} -> {StoredName}";
+    }
+
+    /// <summary>What came back out of the scene, and what did not.</summary>
+    /// <param name="Clips">Stacks written back, one animation each.</param>
+    /// <param name="Ignored">
+    /// Stacks the export did not put there. A creature's skeleton.nif can carry
+    /// animation of its own, which NIFBX writes as a stack like any other, and
+    /// writing that into the project as a clip would invent an animation the game
+    /// never had.
+    /// </param>
+    /// <param name="Failed">Stacks that could not be written back, with the reason.</param>
+    public sealed record ImportReport(
+        IReadOnlyList<ImportedClip> Clips,
+        IReadOnlyList<string> Ignored,
+        IReadOnlyDictionary<string, string> Failed)
+    {
+        public override string ToString() =>
+            $"{Clips.Count} clips, {Ignored.Count} ignored"
+            + (Failed.Count > 0 ? $", {Failed.Count} failed" : "");
+    }
+
     /// <summary>
     /// A creature's clips, into the scene its skeleton is already in.
     /// </summary>
@@ -193,6 +222,103 @@ namespace SKAssets.Export
 
             return new ClipReport(added, missing, unreadable);
         }
+
+        /// <summary>
+        /// The other direction: every stack the export put in the scene, back into
+        /// the project it came from.
+        /// </summary>
+        /// <remarks>
+        /// A creature leaves as one file and has to come back as many. The game
+        /// keeps an animation as its own packfile and records what it does in the
+        /// cache, so writing a creature back means one packfile per stack plus the
+        /// cache entries that address them -- the slot, its root motion, and the
+        /// clip generators that play it.
+        ///
+        /// Which stack is which is not guessed. <see cref="AddClips"/> writes the
+        /// stored name, the cache index and the generators onto the stack itself,
+        /// and this reads them back: a stack without a stored name is not something
+        /// this library put there and is left alone. That matters -- seven of the
+        /// game's 49 actors carry animation in their skeleton.nif, which NIFBX
+        /// writes as a stack like any other, and importing it as a clip would
+        /// invent an animation the creature never had.
+        ///
+        /// <b>Nothing is saved here but the packfiles.</b> The cache and the
+        /// character's animation list are edited in memory, the way HKSK does it,
+        /// so a half-finished import cannot leave half a cache on disk. The caller
+        /// saves: <c>cache.Save()</c>, and <c>project.SaveCharacter()</c> when a
+        /// slot was added.
+        /// </remarks>
+        /// <param name="document">
+        /// A scene from <see cref="AddClips"/>, or one a DCC tool has handed back.
+        /// </param>
+        /// <param name="project">
+        /// The creature's Havok project, opened through a cache that can find its
+        /// files -- there is nowhere to write an animation otherwise.
+        /// </param>
+        /// <param name="codec">
+        /// What compresses the curves. Null builds the default, which runs Havok's
+        /// own codec through mopper.
+        /// </param>
+        /// <param name="overwrite">
+        /// Whether an animation packfile already on disk may be replaced. False is
+        /// for importing into a project you do not want to touch.
+        /// </param>
+        public static ImportReport ImportClips(
+            FbxDocument document,
+            ActorProject project,
+            IAnimationCodec? codec = null,
+            bool overwrite = true)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+            ArgumentNullException.ThrowIfNull(project);
+
+            var exchange = codec is null ? new AnimationExchange() : new AnimationExchange(codec);
+
+            var clips = new List<ImportedClip>();
+            var ignored = new List<string>();
+            var failed = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (FbxObject stack in new FbxScene(document).OfClass("AnimationStack").ToList())
+            {
+                string stored = stack.Properties.GetString(StoredNameProperty);
+
+                if (stored.Length == 0)
+                {
+                    ignored.Add(stack.Name);
+                    continue;
+                }
+
+                ExchangeResult result = exchange.Import(
+                    project, document, stack.Name,
+                    new ImportOptions { StoredName = stored, Overwrite = overwrite },
+                    stack.Name);
+
+                if (!result.Succeeded)
+                {
+                    failed[stack.Name] = result.Problem ?? "the import gave no reason";
+                    continue;
+                }
+
+                // The generators come back too, and only the ones that are missing.
+                // A round trip finds them all already there; an animation new to the
+                // project arrives with nothing able to play it, which is the case
+                // this is for.
+                if (project.Animation(stored) is { } slot)
+                    foreach (string generator in Generators(stack))
+                        if (project.Clip(generator) is null)
+                            project.AddClip(generator, slot);
+
+                clips.Add(new ImportedClip(stack.Name, stored, result.CacheIndex ?? -1, result.Path));
+            }
+
+            return new ImportReport(clips, ignored, failed);
+        }
+
+        /// <summary>The clips a stack says play it.</summary>
+        private static IEnumerable<string> Generators(FbxObject stack) =>
+            stack.Properties.GetString(GeneratorsProperty)
+                .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
+                .Distinct(StringComparer.Ordinal);
 
         /// <summary>
         /// The node each bone of the rig is called in the scene.
