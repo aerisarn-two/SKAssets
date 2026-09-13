@@ -1,3 +1,4 @@
+using HKFBX.Codec;
 using HKFBX.Fbx;
 using HKFBX.Hkx;
 using HKFBX.Model;
@@ -75,6 +76,105 @@ namespace SKAssets.Export.Tests
                 Assert.Equal(travel, slot.Motion?.Travel ?? 0f, 2);
                 Assert.Equal(turn, slot.Motion?.Turn ?? 0f, 2);
             }
+        }
+
+        /// <summary>
+        /// And the curves themselves: every clip comes back animating what it
+        /// animated.
+        /// </summary>
+        /// <remarks>
+        /// HKFBX proves this for one animation at a time -- the chicken's walk out
+        /// to an FBX and back lands within a hundredth of a unit on every bone of
+        /// every frame. The reason to prove it again here is that this layer does
+        /// something HKFBX's test cannot: twenty clips into <em>one</em> document,
+        /// where they share the nodes they drive and the properties they drive them
+        /// on. Every failure found while writing these tests was of that kind, and
+        /// each one left the cache perfectly correct.
+        ///
+        /// The root bone is the sharpest instrument here. Its track is where the
+        /// export puts the cache's travel and where the import takes it back off,
+        /// so a clip whose root comes back as another clip's -- or as nothing --
+        /// says so louder than any other bone.
+        ///
+        /// The loop is lossy on purpose: the original spline is decompressed,
+        /// sampled onto nodes, read back and compressed again through Havok's own
+        /// encoder. What is asserted is the drift that survives all of it. Measured
+        /// over the chicken's twenty clips, every frame and every one of its 33
+        /// tracks, the worst is 0.0011 units of translation and 0.0051 of quaternion
+        /// distance, both on MT_Idle. The bounds are set well above that, because
+        /// the failure this is for is not drift: a track in the wrong place is a
+        /// whole bone's motion misplaced and arrives in units, not thousandths --
+        /// the one that prompted this test was 9.7.
+        /// </remarks>
+        [ClipCorpusFact]
+        public void EveryClipComesBackAnimatingWhatItAnimated()
+        {
+            using var work = new Workspace();
+            ActorProject project = work.Chicken();
+
+            var codec = new MopperAnimationCodec();
+            var before = new Dictionary<string, SampledAnimation>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (AnimationSlot slot in project.Animations)
+                if (project.AnimationPath(slot) is { } path && File.Exists(path))
+                    before[slot.StoredName] = Decoded(path, codec);
+
+            Assert.NotEmpty(before);
+
+            FbxDocument document = work.Scene(project, out SkeletonFile havok);
+            ClipReport exported = ClipExchange.AddClips(document, havok.Rig, project);
+
+            Assert.Empty(exported.Unreadable);
+
+            ImportReport imported = ClipExchange.ImportClips(document, project);
+            Assert.Empty(imported.Failed);
+
+            double worstTranslation = 0, worstRotation = 0;
+            string worst = string.Empty;
+
+            foreach (ImportedClip clip in imported.Clips)
+            {
+                SampledAnimation original = before[clip.StoredName];
+                SampledAnimation after = Decoded(clip.Path!, codec);
+
+                Assert.Equal(original.FrameCount, after.FrameCount);
+                Assert.Equal(original.TrackCount, after.TrackCount);
+
+                for (int frame = 0; frame < original.FrameCount; frame++)
+                for (int track = 0; track < original.TrackCount; track++)
+                {
+                    BoneTransform a = original[frame, track];
+                    BoneTransform b = after[frame, track];
+
+                    double translation = (a.Translation - b.Translation).Length();
+
+                    // A quaternion and its negation are the same rotation, and the
+                    // codec is free to hand back either.
+                    double rotation = Math.Min(
+                        (a.Rotation - b.Rotation).Length(), (a.Rotation + b.Rotation).Length());
+
+                    if (translation > worstTranslation || rotation > worstRotation)
+                        worst = $"{clip.Stack} frame {frame} track {track}";
+
+                    worstTranslation = Math.Max(worstTranslation, translation);
+                    worstRotation = Math.Max(worstRotation, rotation);
+                }
+            }
+
+            Assert.True(worstTranslation < 1e-1,
+                $"translation drifted {worstTranslation} at {worst}");
+
+            Assert.True(worstRotation < 1e-2,
+                $"rotation drifted {worstRotation} at {worst}");
+        }
+
+        /// <summary>An animation packfile as frames of bone transforms.</summary>
+        private static SampledAnimation Decoded(string path, IAnimationCodec codec)
+        {
+            (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _) =
+                HkxAnimationFile.ReadAnimation(path);
+
+            return codec.Decompress(spline) with { TrackToBone = trackToBone };
         }
 
         /// <summary>
