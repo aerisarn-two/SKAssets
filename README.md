@@ -263,6 +263,20 @@ player projects are left to the caller rather than done by default: the cost is
 linear and the draugr's 216 clips are already 187 MB, so the player's 1,656 is
 about a gigabyte and a half.
 
+And back out again, once an animator has been at it:
+
+```csharp
+ImportReport back = ClipExchange.ImportClips(scene, project);
+cache.Save();                 // the packfiles are written; the cache is not
+project.SaveCharacter();      // only when a slot was added
+```
+
+One packfile per stack, plus the cache entries that address it. A stack is matched
+to its slot by what the export wrote onto it rather than by its name, so a stack
+this library did not put there is left alone — seven of the game's actors carry
+animation in their `skeleton.nif`, and importing that would invent an animation
+the creature never had.
+
 **`docs/animation-export.md`** is that half: why root motion comes from the cache
 and not from the animation file, why a slot and a clip are not the same thing, and
 the one number to check after an export.
@@ -352,7 +366,8 @@ reason for the split: it carries NIFBX, HKFBX and HKSK together.
   reads, because a quaternion does not survive the trip through them.
 - `Fbx/BoneUnion` — the nodes only one of the two files has, and which.
 - `Fbx/RagdollFilter` — a Havok collision filter, packed, unpacked and allocated.
-- `ClipExchange` — the creature's animations, one stack each, over that skeleton.
+- `ClipExchange` — the creature's animations, one stack each, over that skeleton,
+  and back out into packfiles and cache entries.
 
 ## Licence
 
@@ -364,9 +379,9 @@ Published to GitHub Packages. With a `nuget.config` pointing at the feed and
 `GITHUB_USERNAME` and `GITHUB_TOKEN` set (the token needs `read:packages`):
 
 ```xml
-<PackageReference Include="SKAssets" Version="0.1.2" />          <!-- what a plugin names -->
-<PackageReference Include="SKAssets.Content" Version="0.1.2" />  <!-- what those files are -->
-<PackageReference Include="SKAssets.Export" Version="0.1.2" />   <!-- those files as one scene -->
+<PackageReference Include="SKAssets" Version="0.1.3" />          <!-- what a plugin names -->
+<PackageReference Include="SKAssets.Content" Version="0.1.3" />  <!-- what those files are -->
+<PackageReference Include="SKAssets.Export" Version="0.1.3" />   <!-- those files as one scene -->
 ```
 
 All three carry the same version and are released together, because each is
