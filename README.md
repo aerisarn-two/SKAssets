@@ -263,6 +263,21 @@ player projects are left to the caller rather than done by default: the cost is
 linear and the draugr's 216 clips are already 187 MB, so the player's 1,656 is
 about a gigabyte and a half.
 
+Or the whole creature in one call, which is what an animator opening one
+actually wants — the bodies beside the skeleton as well as the skeleton, and
+every animation the project has:
+
+```csharp
+CreatureAssets creature = CreatureExchange.Find(folder, cache)!;
+FbxDocument scene = CreatureExchange.Export(creature, database, out CreatureReport report);
+```
+
+The chicken is 33 bones, 7 ragdoll bodies, one body mesh and 20 clips in 7.7 MB;
+the falmer is ten bodies and 122 clips in 115 MB. A creature's visible body is
+neither of its skeleton files — it is a third thing in the same folder — and
+`SceneMerge` folds it onto the skeleton's own bones rather than beside a second
+copy of them.
+
 And back out again, once an animator has been at it:
 
 ```csharp
@@ -368,6 +383,7 @@ reason for the split: it carries NIFBX, HKFBX and HKSK together.
 - `Fbx/RagdollFilter` — a Havok collision filter, packed, unpacked and allocated.
 - `ClipExchange` — the creature's animations, one stack each, over that skeleton,
   and back out into packfiles and cache entries.
+- `CreatureExchange` — all of the above for one creature, from its folder.
 
 ## Licence
 
@@ -379,9 +395,9 @@ Published to GitHub Packages. With a `nuget.config` pointing at the feed and
 `GITHUB_USERNAME` and `GITHUB_TOKEN` set (the token needs `read:packages`):
 
 ```xml
-<PackageReference Include="SKAssets" Version="0.1.5" />          <!-- what a plugin names -->
-<PackageReference Include="SKAssets.Content" Version="0.1.5" />  <!-- what those files are -->
-<PackageReference Include="SKAssets.Export" Version="0.1.5" />   <!-- those files as one scene -->
+<PackageReference Include="SKAssets" Version="0.1.6" />          <!-- what a plugin names -->
+<PackageReference Include="SKAssets.Content" Version="0.1.6" />  <!-- what those files are -->
+<PackageReference Include="SKAssets.Export" Version="0.1.6" />   <!-- those files as one scene -->
 ```
 
 All three carry the same version and are released together, because each is
