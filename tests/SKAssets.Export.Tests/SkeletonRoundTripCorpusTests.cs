@@ -35,11 +35,10 @@ namespace SKAssets.Export.Tests
         private static IReadOnlyList<Pair>? _cached;
         private static readonly Lock Gate = new();
 
-        [Fact]
+        [MeshCorpusFact]
         public void ReadingAndWritingAHavokSkeletonChangesNothing()
         {
-            if (Pairs() is not { Count: > 0 } pairs)
-                return;
+            IReadOnlyList<Pair> pairs = Pairs();
 
             string work = Directory.CreateTempSubdirectory("skcontrol").FullName;
 
@@ -64,11 +63,10 @@ namespace SKAssets.Export.Tests
             finally { Directory.Delete(work, recursive: true); }
         }
 
-        [Fact]
+        [MeshCorpusFact]
         public void ASkeletonThroughAnFbxComesBackAsTheSameFile()
         {
-            if (Pairs() is not { Count: > 0 } pairs)
-                return;
+            IReadOnlyList<Pair> pairs = Pairs();
 
             string work = Directory.CreateTempSubdirectory("sktrip").FullName;
             var db = NifXmlDatabase.LoadEmbedded();
@@ -110,14 +108,10 @@ namespace SKAssets.Export.Tests
         /// Read once and shared. Both tests want the same bytes and opening every
         /// archive twice costs more than holding two megabytes of skeletons.
         /// </remarks>
-        private static IReadOnlyList<Pair>? Pairs()
+        private static IReadOnlyList<Pair> Pairs()
         {
-            string? data = Environment.GetEnvironmentVariable("SKASSETS_SKYRIM_DATA");
-
-            if (string.IsNullOrWhiteSpace(data))
-                return null;
-
-            Assert.True(Directory.Exists(data), $"SKASSETS_SKYRIM_DATA is not a folder: {data}");
+            // The attribute has already skipped the test when this is absent.
+            string data = Corpus.Data!;
 
             lock (Gate)
             {

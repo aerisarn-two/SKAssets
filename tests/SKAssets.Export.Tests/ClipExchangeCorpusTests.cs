@@ -38,11 +38,10 @@ namespace SKAssets.Export.Tests
         /// </summary>
         private static readonly string[] Subjects = ["HareProject", "ChickenProject"];
 
-        [Fact]
+        [HavokCorpusFact]
         public void EveryClipOfACreatureBecomesAStackThatDrivesBones()
         {
-            if (Opened() is not { Count: > 0 } subjects)
-                return;
+            var subjects = Opened();
 
             foreach ((ActorProject project, SkeletonFile havok, byte[] mesh) in subjects)
             {
@@ -68,11 +67,10 @@ namespace SKAssets.Export.Tests
             }
         }
 
-        [Fact]
+        [HavokCorpusFact]
         public void TheClipsSurviveBeingWrittenAndReopened()
         {
-            if (Opened() is not { Count: > 0 } subjects)
-                return;
+            var subjects = Opened();
 
             string work = Directory.CreateTempSubdirectory("skclips").FullName;
 
@@ -131,11 +129,10 @@ namespace SKAssets.Export.Tests
             finally { Directory.Delete(work, recursive: true); }
         }
 
-        [Fact]
+        [HavokCorpusFact]
         public void AStackSaysWhichAnimationItCameFrom()
         {
-            if (Opened() is not { Count: > 0 } subjects)
-                return;
+            var subjects = Opened();
 
             (ActorProject project, SkeletonFile havok, byte[] mesh) = subjects[0];
 
@@ -187,16 +184,11 @@ namespace SKAssets.Export.Tests
         /// The subjects, opened once: the project out of the cache, the rig out of its
         /// skeleton.hkx, and the mesh out of the archives.
         /// </summary>
-        private static IReadOnlyList<(ActorProject Project, SkeletonFile Havok, byte[] Mesh)>? Opened()
+        private static IReadOnlyList<(ActorProject Project, SkeletonFile Havok, byte[] Mesh)> Opened()
         {
-            string? data = Environment.GetEnvironmentVariable("SKASSETS_SKYRIM_DATA");
-            string? loose = Environment.GetEnvironmentVariable("SKASSETS_HAVOK_MESHES");
-
-            if (string.IsNullOrWhiteSpace(data) || string.IsNullOrWhiteSpace(loose))
-                return null;
-
-            Assert.True(Directory.Exists(data), $"SKASSETS_SKYRIM_DATA is not a folder: {data}");
-            Assert.True(Directory.Exists(loose), $"SKASSETS_HAVOK_MESHES is not a folder: {loose}");
+            // The attribute has already skipped the test when either is absent.
+            string data = Corpus.Data!;
+            string loose = Corpus.Havok!;
 
             lock (Gate)
             {

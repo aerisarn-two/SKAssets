@@ -295,8 +295,9 @@ dotnet build
 dotnet test
 ```
 
-146 tests, a few seconds. They build plugins in memory and describe meshes rather
-than reading any, so they run anywhere.
+141 tests, a few seconds. They build plugins in memory and describe meshes rather
+than reading any, so they run anywhere. Five more need the game and **skip**
+without it, rather than passing vacuously — so the count says whether they ran.
 
 `SKAssets.Content` restores NIFBX and HKSK from GitHub Packages, so building it
 needs `GITHUB_USERNAME` and `GITHUB_TOKEN` set, with a token carrying
