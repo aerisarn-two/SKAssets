@@ -11,6 +11,12 @@ namespace SKAssets.Export.Fbx
     /// Source objects not copied because the target already had a node of that
     /// name — the bones an animation binds to, above all.
     /// </param>
+    /// <param name="ReusedNames">
+    /// What those objects were called. The count says how much was shared; this
+    /// says what, which is what a caller needs to record that a node belongs to
+    /// the source as well as to the target — a bone the body is skinned to is in
+    /// both files and has to be written back into both.
+    /// </param>
     /// <param name="Dropped">
     /// Connections whose ends did not both survive. A curve bound to a bone the
     /// target does not have is the usual cause, and the usual cause of that is two
@@ -18,7 +24,8 @@ namespace SKAssets.Export.Fbx
     /// </param>
     /// <param name="UnboundNames">The names those dropped connections wanted.</param>
     public sealed record MergeReport(
-        int Added, int Reused, int Dropped, IReadOnlyList<string> UnboundNames)
+        int Added, int Reused, int Dropped, IReadOnlyList<string> UnboundNames,
+        IReadOnlyList<string> ReusedNames)
     {
         public override string ToString() =>
             $"{Added} added, {Reused} reused, {Dropped} dropped"
@@ -93,6 +100,9 @@ namespace SKAssets.Export.Fbx
 
             var remap = new Dictionary<long, long> { [0] = 0 };
             var names = new Dictionary<long, string>();
+            var classes = new Dictionary<long, string>();
+            var kept = new HashSet<long>();
+            var shared = new List<string>();
             int added = 0, reused = 0;
 
             foreach (FbxNode node in incoming.Nodes)
@@ -100,10 +110,13 @@ namespace SKAssets.Export.Fbx
                 long id = IdOf(node);
                 string name = NameOf(node);
                 names[id] = name;
+                classes[id] = node.Name;
 
                 if (IsShared(node) && _shared.TryGetValue(name, out long existing))
                 {
                     remap[id] = existing;
+                    shared.Add(name);
+                    kept.Add(id);
                     reused++;
                     continue;
                 }
@@ -142,6 +155,22 @@ namespace SKAssets.Export.Fbx
                     continue;
                 }
 
+                // A node the target already had keeps the target's place in the
+                // tree. Carrying the source's opinion about where it sits gives it a
+                // second parent, and a bone with two parents is a skeleton anything
+                // walking the scene descends twice: a creature's chicken.nif came
+                // back with 159 nodes for its 33 bones, each one appearing once per
+                // path from the root, the deepest eight times over.
+                //
+                // Only parenting. A reused bone's other edges are what make it worth
+                // reusing -- the skin cluster binding to it above all -- and those
+                // point at things the source brought with it.
+                if (kept.Contains(from)
+                    && (to == 0 || classes.GetValueOrDefault(to) == "Model"))
+                {
+                    continue;
+                }
+
                 link.Properties[1] = source_;
                 link.Properties[2] = destination;
                 _connections.Nodes.Add(link);
@@ -149,7 +178,7 @@ namespace SKAssets.Export.Fbx
 
             RefreshDefinitions();
 
-            return new MergeReport(added, reused, dropped, unbound);
+            return new MergeReport(added, reused, dropped, unbound, shared);
         }
 
         /// <summary>
