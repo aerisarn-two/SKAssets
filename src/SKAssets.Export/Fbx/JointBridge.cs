@@ -201,6 +201,87 @@ namespace SKAssets.Export.Fbx
         }
 
         /// <summary>
+        /// Says every constraint's two bodies in the mesh's vocabulary again, and
+        /// hands back what it replaced.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Apply"/> rewrites <c>constraint_body_a</c> and
+        /// <c>constraint_body_b</c> from the node names the mesh states into the
+        /// ragdoll body names Havok wants. Both libraries read those same two
+        /// properties and only one spelling can be in them at a time, and NIFBX
+        /// reads them as node names: a constraint naming <c>Ragdoll_LFemur</c>
+        /// finds no such node and is dropped. The cow came back 23 blocks short of
+        /// its 147 -- every bhkRagdollConstraint and bhkLimitedHingeConstraint it
+        /// has -- and every creature loses its whole ragdoll the same way.
+        ///
+        /// So the mesh spelling goes back before the mesh is rebuilt. The Havok
+        /// spelling is returned rather than discarded because the Havok half may be
+        /// read from the same document afterwards and wants the other one; see
+        /// <see cref="Restore"/>.
+        /// </remarks>
+        public static IReadOnlyDictionary<long, (string A, string B)> InMeshNames(FbxDocument document)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+
+            var scene = new FbxScene(document);
+            var models = scene.OfClass("Model").ToList();
+
+            // The inverse of the table Apply built: the node a ragdoll body rides.
+            var meshOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (FbxObject model in models)
+            {
+                string body = model.Properties.GetString(HavokBridge.BodyPrefix + "ragdoll_bone");
+
+                if (body.Length > 0)
+                    meshOf.TryAdd(body, Plain(model.Name));
+            }
+
+            var replaced = new Dictionary<long, (string A, string B)>();
+
+            foreach (FbxObject node in models)
+            {
+                if (node.Properties.GetString(TypeProperty).Length == 0) continue;
+                if (node.Properties.GetString(FrameMarker) == "A") continue;
+
+                string a = node.Properties.GetString(BodyAProperty);
+                string b = node.Properties.GetString(BodyBProperty);
+
+                if (a.Length == 0 && b.Length == 0) continue;
+
+                replaced[node.Id] = (a, b);
+
+                node.Properties.SetUserString(BodyAProperty, meshOf.GetValueOrDefault(a, a));
+                node.Properties.SetUserString(BodyBProperty, meshOf.GetValueOrDefault(b, b));
+            }
+
+            scene.Flush();
+            return replaced;
+        }
+
+        /// <summary>Puts back what <see cref="InMeshNames"/> replaced.</summary>
+        public static void Restore(
+            FbxDocument document, IReadOnlyDictionary<long, (string A, string B)> replaced)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+            ArgumentNullException.ThrowIfNull(replaced);
+
+            if (replaced.Count == 0)
+                return;
+
+            var scene = new FbxScene(document);
+
+            foreach (FbxObject node in scene.OfClass("Model"))
+                if (replaced.TryGetValue(node.Id, out (string A, string B) was))
+                {
+                    node.Properties.SetUserString(BodyAProperty, was.A);
+                    node.Properties.SetUserString(BodyBProperty, was.B);
+                }
+
+            scene.Flush();
+        }
+
+        /// <summary>
         /// A joint frame as a node's placement, for a viewer's benefit. The exact
         /// matrix travels as a property beside it.
         /// </summary>

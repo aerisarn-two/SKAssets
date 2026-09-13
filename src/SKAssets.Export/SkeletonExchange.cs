@@ -269,7 +269,23 @@ namespace SKAssets.Export
             ArgumentNullException.ThrowIfNull(document);
             ArgumentNullException.ThrowIfNull(database);
 
-            return new FbxToNif(new FbxScene(document)).Convert(database);
+            // The scene's constraints name their bodies the way Havok does, because
+            // the export put them that way; NIFBX reads the same two properties as
+            // node names. Said in the ragdoll's vocabulary they match no node and
+            // the whole ragdoll is dropped, so the mesh's own spelling goes back for
+            // the length of the conversion and the Havok one is put back after --
+            // ImportHavok may be called on this same document and wants it.
+            IReadOnlyDictionary<long, (string A, string B)> replaced =
+                JointBridge.InMeshNames(document);
+
+            try
+            {
+                return new FbxToNif(new FbxScene(document)).Convert(database);
+            }
+            finally
+            {
+                JointBridge.Restore(document, replaced);
+            }
         }
 
         /// <summary>Whether a scene says which of its nodes the rig wants.</summary>
