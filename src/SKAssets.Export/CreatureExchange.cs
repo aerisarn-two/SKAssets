@@ -64,6 +64,30 @@ namespace SKAssets.Export
             + (Unbound.Count > 0 ? $", {Unbound.Count} unbound" : "");
     }
 
+    /// <summary>What a scene turns out to hold.</summary>
+    /// <param name="HasMesh">Whether anything in it came out of a NIF.</param>
+    /// <param name="HasRig">Whether it carries a Havok rig, and possibly a ragdoll.</param>
+    /// <param name="HasClips">Whether it carries animations this library put there.</param>
+    /// <param name="Sources">The files it was built from, where it says.</param>
+    /// <param name="Clips">How many animation stacks are clips.</param>
+    public sealed record SceneContents(
+        bool HasMesh, bool HasRig, bool HasClips, IReadOnlyList<string> Sources, int Clips)
+    {
+        /// <summary>Whether it holds anything this library knows what to do with.</summary>
+        public bool IsEmpty => !HasMesh && !HasRig && !HasClips;
+
+        public override string ToString()
+        {
+            var parts = new List<string>();
+
+            if (HasMesh) parts.Add(Sources.Count > 1 ? $"{Sources.Count} meshes" : "a mesh");
+            if (HasRig) parts.Add("a rig");
+            if (HasClips) parts.Add($"{Clips} clips");
+
+            return parts.Count == 0 ? "nothing this library recognises" : string.Join(", ", parts);
+        }
+    }
+
     /// <summary>What a scene was taken apart into.</summary>
     /// <param name="Skeleton">
     /// The <c>skeleton.nif</c>, where the scene held one. Also in <paramref name="Meshes"/>.
@@ -301,25 +325,10 @@ namespace SKAssets.Export
             ArgumentNullException.ThrowIfNull(document);
             ArgumentNullException.ThrowIfNull(database);
 
-            var scene = new FbxScene(document);
+            SceneContents contents = Inspect(document);
+
+            (bool hasMesh, bool hasRig, bool hasClips, IReadOnlyList<string> sources, _) = contents;
             var held = new List<string>();
-
-            var sources = new List<string>();
-
-            foreach (FbxObject model in scene.OfClass("Model"))
-                foreach (string source in SourcesOf(model))
-                    if (!sources.Contains(source, StringComparer.OrdinalIgnoreCase))
-                        sources.Add(source);
-
-            bool hasMesh = scene.OfClass("Geometry").Any()
-                || scene.OfClass("Model").Any(m => m.Properties.GetString(NifNodeProperty).Length > 0);
-
-            bool hasRig = SkeletonExchange.ReadRigBones(document) is not null
-                || scene.OfClass("Model").Any(m =>
-                    m.Properties.GetString(HavokBridge.BodyPrefix + "ragdoll_bone").Length > 0);
-
-            bool hasClips = scene.OfClass("AnimationStack")
-                .Any(stack => stack.Properties.GetString(ClipExchange.StoredNameProperty).Length > 0);
 
             var meshes = new Dictionary<string, NifModel>(StringComparer.OrdinalIgnoreCase);
 
@@ -361,6 +370,40 @@ namespace SKAssets.Export
             meshes.TryGetValue(DefaultSkeletonName, out NifModel? skeleton);
 
             return new CreatureImport(skeleton, meshes, havok, clips, held);
+        }
+
+        /// <summary>
+        /// What a scene holds, without converting any of it.
+        /// </summary>
+        /// <remarks>
+        /// The question a tool has to answer before it can do anything useful with
+        /// a file somebody handed it, and the same question <see cref="Import"/>
+        /// asks itself. Nothing here is expensive: it is four passes over the
+        /// object list and no geometry is touched.
+        /// </remarks>
+        public static SceneContents Inspect(FbxDocument document)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+
+            var scene = new FbxScene(document);
+            var sources = new List<string>();
+
+            foreach (FbxObject model in scene.OfClass("Model"))
+                foreach (string source in SourcesOf(model))
+                    if (!sources.Contains(source, StringComparer.OrdinalIgnoreCase))
+                        sources.Add(source);
+
+            bool hasMesh = scene.OfClass("Geometry").Any()
+                || scene.OfClass("Model").Any(m => m.Properties.GetString(NifNodeProperty).Length > 0);
+
+            bool hasRig = SkeletonExchange.ReadRigBones(document) is not null
+                || scene.OfClass("Model").Any(m =>
+                    m.Properties.GetString(HavokBridge.BodyPrefix + "ragdoll_bone").Length > 0);
+
+            int clips = scene.OfClass("AnimationStack")
+                .Count(stack => stack.Properties.GetString(ClipExchange.StoredNameProperty).Length > 0);
+
+            return new SceneContents(hasMesh, hasRig, clips > 0, sources, clips);
         }
 
         /// <summary>
