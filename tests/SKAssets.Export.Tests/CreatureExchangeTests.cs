@@ -102,27 +102,170 @@ namespace SKAssets.Export.Tests
         }
 
         /// <summary>
-        /// Every mesh folded in says which file it came out of.
+        /// Every node says which files it belongs to, and a bone belongs to more
+        /// than one.
         /// </summary>
+        /// <remarks>
+        /// The whole of what makes the scene separable again. A bone the body is
+        /// skinned to is in the skeleton file and in the body file, and the merge
+        /// keeps one node for both; unless the node says so, writing the creature
+        /// back out can only produce one enormous skeleton.nif with every body
+        /// inside it.
+        /// </remarks>
         [CreatureFact]
-        public void AFoldedBodySaysWhichFileItCameFrom()
+        public void EveryNodeSaysWhichFilesItBelongsTo()
         {
             CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
 
             FbxDocument scene = CreatureExchange.Export(
                 assets, NifXmlDatabase.LoadEmbedded(), out _, slots: []);
 
-            var sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int shared = 0, bodyOnly = 0;
 
             foreach (FbxObject model in new FbxScene(scene).OfClass("Model"))
             {
-                string source = model.Properties.GetString(CreatureExchange.SourceProperty);
+                IReadOnlyList<string> sources = CreatureExchange.SourcesOf(model);
 
-                if (source.Length > 0) sources.Add(source);
+                foreach (string source in sources) files.Add(source);
+
+                if (sources.Count > 1) shared++;
+                else if (sources.Count == 1 && sources[0].Equals("chicken.nif", StringComparison.OrdinalIgnoreCase))
+                    bodyOnly++;
             }
 
-            Assert.Equal(["chicken.nif"], sources);
+            Assert.Equal(["skeleton.nif", "chicken.nif"], files.OrderBy(f => f, StringComparer.Ordinal).Reverse());
+
+            // The bones the skin binds to are in both files; the mesh node is the
+            // body's alone.
+            Assert.True(shared > 0, "no node was shared between the skeleton and the body");
+            Assert.True(bodyOnly > 0, "the body contributed no node of its own");
         }
+
+        /// <summary>
+        /// A scene holding everything comes apart into the files it was built from.
+        /// </summary>
+        /// <remarks>
+        /// The body and the skeleton share their bones, so a scene that cannot say
+        /// which node belongs to which file can only be written back as one
+        /// enormous skeleton.nif with the body inside it. This is the claim that it
+        /// can.
+        ///
+        /// The body does not come back byte for byte and is not expected to: it
+        /// arrives with the skeleton above it, because a scene has one root and the
+        /// body's own was merged away when the two were joined. What it does come
+        /// back with is every bone it was skinned to, its geometry, and a skin
+        /// binding them — which is what makes it a body rather than a pile of
+        /// triangles.
+        /// </remarks>
+        [ClipCorpusFact]
+        public void AWholeCreatureComesApartIntoTheFilesItWasBuiltFrom()
+        {
+            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
+            var db = NifXmlDatabase.LoadEmbedded();
+
+            FbxDocument scene = CreatureExchange.Export(assets, db, out _);
+            CreatureImport back = CreatureExchange.Import(scene, db, assets.Project);
+
+            // All four halves.
+            Assert.NotNull(back.Skeleton);
+            Assert.NotNull(back.Havok);
+            Assert.NotNull(back.Clips);
+            Assert.Equal(2, back.Meshes.Count);
+
+            // The skeleton, with the ragdoll it describes.
+            NifModel original = NifModel.Load(assets.Skeleton, db);
+            Assert.Equal(original.Blocks.Count, back.Skeleton!.Blocks.Count);
+
+            Assert.Equal(
+                Census(original),
+                Census(back.Skeleton));
+
+            // The body, with its skin.
+            NifModel body = back.Meshes["chicken.nif"];
+
+            Assert.Equal(1, Count(body, "BSTriShape"));
+            Assert.Equal(1, Count(body, "NiSkinInstance"));
+            Assert.Equal(1, Count(body, "NiSkinPartition"));
+
+            // Every bone the body had, and none of the skeleton's collision.
+            Assert.True(Count(body, "NiNode") >= Count(NifModel.Load(
+                Path.Combine(Path.GetDirectoryName(assets.Skeleton)!, "chicken.nif"), db), "NiNode"));
+
+            Assert.Equal(0, Count(body, "bhkRigidBody"));
+            Assert.Equal(0, Count(body, "bhkRagdollConstraint"));
+
+            // And the animations, into the project.
+            Assert.Empty(back.Clips!.Failed);
+            Assert.Equal(assets.Project!.Animations.Count, back.Clips.Clips.Count);
+        }
+
+        /// <summary>
+        /// A rig on its own is a rig, and no mesh is invented for it.
+        /// </summary>
+        [CreatureFact]
+        public void ARigWithNoMeshComesBackAsARig()
+        {
+            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
+
+            FbxDocument scene = HKFBX.Fbx.FbxSkeletonWriter.Build(
+                HKFBX.Hkx.HkxSkeletonFile.Read(assets.Rig!));
+
+            CreatureImport back = CreatureExchange.Import(scene, NifXmlDatabase.LoadEmbedded());
+
+            Assert.NotNull(back.Havok);
+            Assert.NotEmpty(back.Havok!.Rig.Bones);
+            Assert.Empty(back.Meshes);
+            Assert.Null(back.Skeleton);
+            Assert.Null(back.Clips);
+        }
+
+        /// <summary>
+        /// And a mesh on its own is a mesh: nothing writes a skeleton.hkx for a
+        /// scene that never carried a rig, because there would be nothing to write
+        /// it from.
+        /// </summary>
+        [CreatureFact]
+        public void AMeshWithNoRigComesBackAsAMesh()
+        {
+            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
+            var db = NifXmlDatabase.LoadEmbedded();
+
+            FbxDocument scene = SkeletonExchange.Export(NifModel.Load(assets.Skeleton, db));
+            CreatureImport back = CreatureExchange.Import(scene, db);
+
+            Assert.NotNull(back.Skeleton);
+            Assert.Single(back.Meshes);
+            Assert.Null(back.Clips);
+        }
+
+        /// <summary>
+        /// A scene this library did not build has no record of what it was made
+        /// from, and is read as the one mesh it is.
+        /// </summary>
+        [CreatureFact]
+        public void ASceneWithNoRecordOfItsFilesIsOneMesh()
+        {
+            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
+            var db = NifXmlDatabase.LoadEmbedded();
+
+            FbxDocument scene = new NIFBX.Conversion.NifToFbx(
+                NifModel.Load(assets.Meshes[0], db)).Convert();
+
+            CreatureImport back = CreatureExchange.Import(scene, db);
+
+            Assert.Single(back.Meshes);
+            Assert.NotNull(back.Skeleton);
+            Assert.Null(back.Clips);
+        }
+
+        private static string Census(NifModel model) =>
+            string.Join(' ', model.Blocks.GroupBy(b => b.Def.Name)
+                .OrderBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => $"{g.Key}:{g.Count()}"));
+
+        private static int Count(NifModel model, string type) =>
+            model.Blocks.Count(b => b.Def.Name == type);
 
         /// <summary>
         /// And with the clips: every animation the project has, one stack each,
