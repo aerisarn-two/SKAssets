@@ -3,6 +3,8 @@ using HKFBX.Model;
 using LeanMeshIO;
 using NIFBX.Conversion;
 using NIFSharp;
+using HavokObject = HKFBX.Fbx.FbxObject;
+using HavokScene = HKFBX.Fbx.FbxScene;
 using FbxObject = NIFBX.Fbx.FbxObject;
 using FbxScene = NIFBX.Fbx.FbxScene;
 using SKAssets.Export.Fbx;
@@ -280,12 +282,58 @@ namespace SKAssets.Export
 
             try
             {
-                return new FbxToNif(new FbxScene(document)).Convert(database);
+                return new FbxToNif(new FbxScene(WithoutClips(document))).Convert(database);
             }
             finally
             {
                 JointBridge.Restore(document, replaced);
             }
+        }
+
+        /// <summary>
+        /// The same scene without the creature's animations, where it has any.
+        /// </summary>
+        /// <remarks>
+        /// A creature travels with its whole animation set, one stack per clip, and
+        /// those belong in packfiles -- <see cref="ClipExchange.ImportClips"/> puts
+        /// them there. NIFBX reads every stack in a scene as animation of the mesh
+        /// and writes a controller and an interpolator for each track of each one,
+        /// which is right for a mesh that carries its own animation and wrong for a
+        /// creature carrying a library of them: the chicken's skeleton.nif came back
+        /// with 1,440 blocks against the 67 it ships, every clip baked into the file
+        /// as node controllers.
+        ///
+        /// So the mesh is rebuilt from a copy with the clip stacks taken out. A copy
+        /// because the caller's document is not this method's to damage -- the Havok
+        /// half is usually read from it afterwards, and the clips after that -- and
+        /// because taking a stack out and putting it back is not an operation the
+        /// scene offers. Scenes without clips are not copied at all, which is every
+        /// scene this library did not add clips to.
+        /// </remarks>
+        private static FbxDocument WithoutClips(FbxDocument document)
+        {
+            var scene = new HavokScene(document);
+
+            List<HavokObject> clips = [.. scene.OfClass("AnimationStack")
+                .Where(stack => stack.Properties
+                    .GetString(ClipExchange.StoredNameProperty).Length > 0)];
+
+            if (clips.Count == 0)
+                return document;
+
+            var buffer = new MemoryStream();
+            document.Save(buffer);
+            buffer.Position = 0;
+
+            FbxDocument copy = FbxDocument.Load(buffer);
+            var copied = new HavokScene(copy);
+
+            foreach (HavokObject stack in copied.OfClass("AnimationStack").ToList())
+                if (stack.Properties.GetString(ClipExchange.StoredNameProperty).Length > 0)
+                    copied.Remove(stack);
+
+            copied.Flush();
+            return copy;
         }
 
         /// <summary>Whether a scene says which of its nodes the rig wants.</summary>
