@@ -278,6 +278,21 @@ neither of its skeleton files — it is a third thing in the same folder — and
 `SceneMerge` folds it onto the skeleton's own bones rather than beside a second
 copy of them.
 
+And back apart into the files the game reads, however much of a creature the
+scene turns out to hold:
+
+```csharp
+CreatureImport back = CreatureExchange.Import(scene, database, project);
+// back.Skeleton, back.Meshes["chicken.nif"], back.Havok, back.Clips
+```
+
+Each part is written only where the scene carries it: no `skeleton.hkx` for a
+scene that never had a rig, no `skeleton.nif` for a scene of pure animation. The
+bodies come back one file each because the export records which files every node
+belongs to — a bone is in the skeleton and in every body skinned to it — and
+without that record the only honest answer is one enormous `skeleton.nif` with
+every body inside it.
+
 And back out again, once an animator has been at it:
 
 ```csharp
@@ -383,7 +398,8 @@ reason for the split: it carries NIFBX, HKFBX and HKSK together.
 - `Fbx/RagdollFilter` — a Havok collision filter, packed, unpacked and allocated.
 - `ClipExchange` — the creature's animations, one stack each, over that skeleton,
   and back out into packfiles and cache entries.
-- `CreatureExchange` — all of the above for one creature, from its folder.
+- `CreatureExchange` — all of the above for one creature, from its folder, and
+  back apart into the files it came from.
 
 ## Licence
 
@@ -395,9 +411,9 @@ Published to GitHub Packages. With a `nuget.config` pointing at the feed and
 `GITHUB_USERNAME` and `GITHUB_TOKEN` set (the token needs `read:packages`):
 
 ```xml
-<PackageReference Include="SKAssets" Version="0.1.6" />          <!-- what a plugin names -->
-<PackageReference Include="SKAssets.Content" Version="0.1.6" />  <!-- what those files are -->
-<PackageReference Include="SKAssets.Export" Version="0.1.6" />   <!-- those files as one scene -->
+<PackageReference Include="SKAssets" Version="0.1.7" />          <!-- what a plugin names -->
+<PackageReference Include="SKAssets.Content" Version="0.1.7" />  <!-- what those files are -->
+<PackageReference Include="SKAssets.Export" Version="0.1.7" />   <!-- those files as one scene -->
 ```
 
 All three carry the same version and are released together, because each is
