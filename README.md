@@ -412,9 +412,9 @@ Published to GitHub Packages. With a `nuget.config` pointing at the feed and
 `GITHUB_USERNAME` and `GITHUB_TOKEN` set (the token needs `read:packages`):
 
 ```xml
-<PackageReference Include="SKAssets" Version="0.1.13" />          <!-- what a plugin names -->
-<PackageReference Include="SKAssets.Content" Version="0.1.13" />  <!-- what those files are -->
-<PackageReference Include="SKAssets.Export" Version="0.1.13" />   <!-- those files as one scene -->
+<PackageReference Include="SKAssets" Version="0.1.14" />          <!-- what a plugin names -->
+<PackageReference Include="SKAssets.Content" Version="0.1.14" />  <!-- what those files are -->
+<PackageReference Include="SKAssets.Export" Version="0.1.14" />   <!-- those files as one scene -->
 ```
 
 All three carry the same version and are released together, because each is
