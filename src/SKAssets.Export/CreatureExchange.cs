@@ -513,8 +513,103 @@ namespace SKAssets.Export
                 scene.Remove(o);
 
             scene.Flush();
+            Reroot(copy, source);
+
             return copy;
         }
+
+        /// <summary>
+        /// Puts what is left under the file's own root, so that it is that file again.
+        /// </summary>
+        /// <remarks>
+        /// The bones a body is skinned to belong to the skeleton as well, so keeping
+        /// them keeps every node above them -- which climbs out of the body and into
+        /// the skeleton, whose root is then still standing beside the body's own. Two
+        /// nodes at the top of a scene and NIFBX writes a third above both, so a
+        /// draugr's `DraugrMale02.nif` came back as a `BSFadeNode` named `Scene`
+        /// wrapping the `NiNode` it should have been: 118 blocks against the 101 it
+        /// went in as, carrying the skeleton's flags and bounds along with it.
+        ///
+        /// It hid every other difference too. A comparison walks from the root and
+        /// stops where two roots are different block types, so `DraugrMale02.nif` and
+        /// `Hair01.nif` each reported a single difference and had never been compared
+        /// at all.
+        ///
+        /// Which node is the file's own root is asked of
+        /// <see cref="NifNodeProperty"/> rather than of the shape of the scene, and
+        /// that distinction is the whole of it. In a scene NIFBX wrote, a file's nodes
+        /// hang under its root and the root is the only one of them at the top. In one
+        /// Blender wrote they do not: Blender puts every skinned mesh at the top of the
+        /// scene, beside the root rather than under it, so a draugr arrives with eight
+        /// nodes at the top and six of them are its body's meshes. Picking the first
+        /// that named this file picked a mesh, and treating the rest as foreign deleted
+        /// the other five.
+        ///
+        /// So a node at the top is one of three things: this file's root, another of
+        /// this file's nodes, or a node kept only because something under it was
+        /// needed. The first two stay -- the second reparented under the first -- and
+        /// the third is dropped after what hung beneath it is taken over.
+        /// </remarks>
+        private static void Reroot(FbxDocument document, string source)
+        {
+            var scene = new HavokScene(document);
+            List<HavokObject> tops = scene.RootModels().ToList();
+
+            if (tops.Count < 2)
+                return;
+
+            HavokObject? own = tops.FirstOrDefault(
+                m => Claims(m, source) && m.Properties.GetString(NifNodeProperty).Length > 0);
+
+            if (own is null)
+                return;
+
+            var adopted = new List<HavokObject>();
+
+            foreach (HavokObject other in tops.Where(m => m.Id != own.Id))
+            {
+                if (Claims(other, source))
+                {
+                    // This file's own, standing at the top because the scene was
+                    // written that way. It moves under the root, it is not dropped.
+                    adopted.Add(other);
+                    continue;
+                }
+
+                // Kept for what is under it and nothing else. Its children first,
+                // because `Remove` takes every connection that mentions it with it.
+                adopted.AddRange(scene.ChildrenOf(other.Id).Where(c => c.Class == "Model"));
+                scene.Remove(other);
+            }
+
+            if (adopted.Count == 0)
+                return;
+
+            // Reconnected through NIFBX's view of the same document: that view can join
+            // two objects where this one can remove one, and between them that is a
+            // reparent. Each writes the document once and in turn -- flushing one after
+            // the other has written puts the older connection list back and undoes the
+            // join.
+            scene.Flush();
+
+            var joined = new FbxScene(document);
+            Dictionary<long, FbxObject> models = joined.OfClass("Model").ToDictionary(m => m.Id);
+
+            if (!models.TryGetValue(own.Id, out FbxObject? root))
+                return;
+
+            foreach (HavokObject node in adopted)
+                if (models.TryGetValue(node.Id, out FbxObject? moved))
+                    joined.Connect(moved, root);
+
+            joined.Flush();
+        }
+
+        /// <summary>Whether a node says it belongs to the given file.</summary>
+        private static bool Claims(HavokObject model, string source) =>
+            model.Properties.GetString(SourceProperty)
+                .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
+                .Contains(source, StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Says which file a body came out of, before it is folded in.</summary>
         /// <remarks>

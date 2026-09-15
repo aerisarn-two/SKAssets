@@ -201,6 +201,80 @@ namespace SKAssets.Export.Tests
         }
 
         /// <summary>
+        /// Each file comes back rooted at its own root, not at the scene's.
+        /// </summary>
+        /// <remarks>
+        /// A body is skinned to bones the skeleton owns, so keeping them keeps every
+        /// node above them, which climbs out of the body and into the skeleton. Both
+        /// roots were then left standing and NIFBX wrote a third above the pair, so a
+        /// chicken's body came back as a `BSFadeNode` named `Scene` wrapping the
+        /// `NiNode` it is -- and a draugr's as 118 blocks where its file holds 101,
+        /// carrying the skeleton's flags and bounds with it.
+        ///
+        /// The root block is the claim worth making. A comparison of two NIFs walks
+        /// from the root and stops where the roots are different block types, so while
+        /// this was wrong every mesh comparison in the suite reported one difference
+        /// and had compared nothing at all.
+        /// </remarks>
+        [ClipCorpusFact]
+        public void EachFileComesBackRootedAtItsOwnRoot()
+        {
+            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
+            var db = NifXmlDatabase.LoadEmbedded();
+
+            FbxDocument scene = CreatureExchange.Export(assets, db, out _, slots: []);
+            CreatureImport back = CreatureExchange.Import(scene, db);
+
+            string folder = Path.GetDirectoryName(assets.Skeleton)!;
+
+            foreach ((string file, NifModel rebuilt) in back.Meshes)
+            {
+                NifModel original = NifModel.Load(Path.Combine(folder, file), db);
+
+                Assert.Equal(RootBlock(original).Name, RootBlock(rebuilt).Name);
+            }
+
+            // The name is not asserted, and the reason is worth keeping. A file whose
+            // own root is the only node at the top of the scene is not rerooted -- the
+            // skeleton's is -- and NIFBX writes its own root over that one, named
+            // `Scene`. That is the same difference the skeleton shows on a round trip
+            // with no DCC tool anywhere near it, so it belongs to the conversion and
+            // not here, and asserting it here would move the failure rather than the
+            // fault.
+        }
+
+        /// <summary>And without the skeleton's own belongings attached to it.</summary>
+        /// <remarks>
+        /// The skeleton's root was kept only because the body's bones hang beneath it,
+        /// and everything it carries came along: a chicken's body arrived with the
+        /// skeleton's BSXFlags on it, which is a statement about the whole creature
+        /// made by a file that is one part of it.
+        /// </remarks>
+        [ClipCorpusFact]
+        public void AndWithoutWhatTheSkeletonWasCarrying()
+        {
+            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
+            var db = NifXmlDatabase.LoadEmbedded();
+
+            FbxDocument scene = CreatureExchange.Export(assets, db, out _, slots: []);
+            CreatureImport back = CreatureExchange.Import(scene, db);
+
+            NifModel body = back.Meshes["chicken.nif"];
+
+            Assert.Equal(0, Count(body, "BSFadeNode"));
+            Assert.Equal(0, Count(body, "BSXFlags"));
+
+            // And the mesh is still there, which is the thing a reroot can take with
+            // it: the first version of this dropped five of a draugr's six shapes by
+            // treating them as another file's.
+            Assert.Equal(1, Count(body, "BSTriShape"));
+        }
+
+        /// <summary>The first root the footer names.</summary>
+        private static NifItem RootBlock(NifModel model) =>
+            model.GetBlock(model.FindItem(model.Footer, "Roots")!.Children[0])!;
+
+        /// <summary>
         /// A rig on its own is a rig, and no mesh is invented for it.
         /// </summary>
         [CreatureFact]
