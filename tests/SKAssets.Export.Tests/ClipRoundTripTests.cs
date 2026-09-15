@@ -340,6 +340,89 @@ namespace SKAssets.Export.Tests
         }
 
         /// <summary>
+        /// A scene whose stacks a DCC tool has stripped and renamed still comes back.
+        /// </summary>
+        /// <remarks>
+        /// This is what Blender does, and it is not misbehaviour: an animation stack
+        /// arrives as an action, which keeps the curves and the name and has nowhere
+        /// to put the stack's properties, and the stacks written on the way out are
+        /// new ones Blender named itself --
+        /// <c>Skeleton.nif|Skeleton.nif|1HMAttackA|Default</c>, the object and the
+        /// action and the track joined by bars. Measured on a draugr: 217 stacks out,
+        /// 217 stacks back, and 216 of 216 clip properties gone. Every animation was
+        /// still there and none of them could be named, so the import counted no clips
+        /// and wrote none.
+        ///
+        /// So the same three facts are written on a node as well, where they survive,
+        /// and a stack that has lost its own is looked up there by whichever part of
+        /// its new name it was given. The stripping here is the measured one: the
+        /// three properties removed and the name decorated exactly that way.
+        ///
+        /// A stack that was never a clip has to stay ignored through all of it -- that
+        /// is what <see cref="AStackTheExportDidNotWriteIsIgnored"/> is about, and a
+        /// fallback that guesses would undo it -- so one is put in and checked for.
+        /// </remarks>
+        [ClipCorpusFact]
+        public void ClipsComeBackFromASceneThatHasBeenThroughABlender()
+        {
+            using var work = new Workspace();
+            ActorProject project = work.Chicken();
+
+            FbxDocument document = work.Scene(project, out SkeletonFile havok);
+            ClipReport exported = ClipExchange.AddClips(document, havok.Rig, project);
+
+            Assert.NotEmpty(exported.Stacks);
+
+            FbxAnimationWriter.AddStack(
+                document, havok.Rig, Flat(havok.Rig), "a_stack_from_the_mesh");
+
+            // What Blender leaves behind.
+            var scene = new FbxScene(document);
+
+            foreach (FbxObject stack in scene.OfClass("AnimationStack").ToList())
+            {
+                string name = stack.Name;
+
+                stack.Properties.Remove(ClipExchange.StoredNameProperty);
+                stack.Properties.Remove(ClipExchange.CacheIndexProperty);
+                stack.Properties.Remove(ClipExchange.GeneratorsProperty);
+
+                stack.QualifiedName = $"AnimStack::Skeleton.nif|Skeleton.nif|{name}|Default";
+            }
+
+            scene.Flush();
+
+            Assert.All(
+                new FbxScene(document).OfClass("AnimationStack"),
+                stack => Assert.Empty(stack.Properties.GetString(ClipExchange.StoredNameProperty)));
+
+            // The manifest is what is left, and it is enough.
+            IReadOnlyDictionary<string, ClipExchange.ClipRecord> manifest =
+                ClipExchange.Manifest(document);
+
+            Assert.Equal(exported.Stacks.Count, manifest.Count);
+
+            var before = project.Animations
+                .ToDictionary(a => a.StoredName, a => a.Index, StringComparer.OrdinalIgnoreCase);
+
+            ImportReport imported = ClipExchange.ImportClips(document, project);
+
+            Assert.Empty(imported.Failed);
+            Assert.Equal(exported.Stacks.Count, imported.Clips.Count);
+
+            // The one that was never a clip is still not one.
+            Assert.Equal(
+                ["Skeleton.nif|Skeleton.nif|a_stack_from_the_mesh|Default"],
+                imported.Ignored);
+
+            // And each came back as the animation it was, not merely as some animation.
+            Assert.Equal(before.Count, project.Animations.Count);
+
+            foreach (ImportedClip clip in imported.Clips)
+                Assert.Equal(before[clip.StoredName], clip.CacheIndex);
+        }
+
+        /// <summary>
         /// The whole creature, in one scene and back out: mesh, rig, ragdoll,
         /// clips and cache.
         /// </summary>

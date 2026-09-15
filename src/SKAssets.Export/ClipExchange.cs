@@ -121,7 +121,29 @@ namespace SKAssets.Export
         /// </summary>
         public const string GeneratorsProperty = "sk_clip_generators";
 
+        /// <summary>The same three facts about every clip, written on a node.</summary>
+        /// <remarks>
+        /// A second copy, and the only one that survives a DCC tool. Blender reads an
+        /// animation stack as an action and keeps its curves and its name; the stack's
+        /// own properties are not part of an action and are dropped, and the stacks it
+        /// writes on the way out are new ones it named itself. So a creature that has
+        /// been through Blender comes back with 216 stacks and not one of them says
+        /// which animation it is -- the clips are all there and all anonymous.
+        ///
+        /// Node properties do survive: <see cref="SkeletonExchange.RigBonesProperty"/>
+        /// is 1,670 bytes of bone names on the rig's root node and comes back byte for
+        /// byte. So the same three facts ride there as well, keyed by the name of the
+        /// stack they were written for, and a stack that has lost its properties is
+        /// looked up by name instead.
+        ///
+        /// One row per clip, fields tab separated: the stack's name, the stored name,
+        /// the cache index, and then a field per generator.
+        /// </remarks>
+        public const string ManifestProperty = "sk_clips";
+
         private const char Separator = '\t';
+
+        private const char RowSeparator = '\n';
 
         /// <summary>
         /// Adds one animation stack per slot to a scene that already holds the rig.
@@ -220,6 +242,8 @@ namespace SKAssets.Export
                     name, slot.StoredName, slot.Index, bound, clip.FrameCount, clip.Duration, slot.Travels));
             }
 
+            WriteManifest(document, added, project);
+
             return new ClipReport(added, missing, unreadable);
         }
 
@@ -278,9 +302,20 @@ namespace SKAssets.Export
             var ignored = new List<string>();
             var failed = new Dictionary<string, string>(StringComparer.Ordinal);
 
+            IReadOnlyDictionary<string, ClipRecord> manifest = Manifest(document);
+
             foreach (FbxObject stack in new FbxScene(document).OfClass("AnimationStack").ToList())
             {
+                // The stack's own properties first, because they are the ones written
+                // for this stack. The manifest is the fallback, and it is what answers
+                // for a scene that has been through a DCC tool: the properties are gone
+                // and the stack has been renamed, but the list on the node survived and
+                // the name it was given is still inside the new one.
                 string stored = stack.Properties.GetString(StoredNameProperty);
+                ClipRecord? recorded = stored.Length > 0 ? null : Recorded(stack, manifest);
+
+                if (recorded is { } row)
+                    stored = row.StoredName;
 
                 if (stored.Length == 0)
                 {
@@ -304,7 +339,7 @@ namespace SKAssets.Export
                 // project arrives with nothing able to play it, which is the case
                 // this is for.
                 if (project.Animation(stored) is { } slot)
-                    foreach (string generator in Generators(stack))
+                    foreach (string generator in Generators(stack, recorded))
                         if (project.Clip(generator) is null)
                             project.AddClip(generator, slot);
 
@@ -314,11 +349,13 @@ namespace SKAssets.Export
             return new ImportReport(clips, ignored, failed);
         }
 
-        /// <summary>The clips a stack says play it.</summary>
-        private static IEnumerable<string> Generators(FbxObject stack) =>
-            stack.Properties.GetString(GeneratorsProperty)
-                .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
-                .Distinct(StringComparer.Ordinal);
+        /// <summary>The clips a stack says play it, or the ones the manifest remembers.</summary>
+        private static IEnumerable<string> Generators(FbxObject stack, ClipRecord? recorded) =>
+            recorded is { } row
+                ? row.Generators.Distinct(StringComparer.Ordinal)
+                : stack.Properties.GetString(GeneratorsProperty)
+                    .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
+                    .Distinct(StringComparer.Ordinal);
 
         /// <summary>
         /// The node each bone of the rig is called in the scene.
@@ -379,6 +416,126 @@ namespace SKAssets.Export
                 stack.Properties.SetUserString(GeneratorsProperty, string.Join(Separator, generators));
 
             scene.Flush();
+        }
+
+        /// <summary>What a manifest row says about one clip.</summary>
+        /// <param name="Stack">The stack it was written for.</param>
+        /// <param name="StoredName">The animation as the project stores it.</param>
+        /// <param name="Index">Its position in the character's animation list.</param>
+        /// <param name="Generators">The clip generators that play it.</param>
+        public readonly record struct ClipRecord(
+            string Stack, string StoredName, int Index, IReadOnlyList<string> Generators);
+
+        /// <summary>Puts the whole clip list on a node, where a DCC tool will keep it.</summary>
+        private static void WriteManifest(
+            FbxDocument document, IReadOnlyList<ClipStack> added, ActorProject project)
+        {
+            if (added.Count == 0)
+                return;
+
+            var rows = new List<string>(added.Count);
+
+            foreach (ClipStack stack in added)
+            {
+                var fields = new List<string>
+                {
+                    stack.Name,
+                    stack.StoredName,
+                    stack.CacheIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                };
+
+                if (project.Animation(stack.StoredName) is { } slot)
+                    fields.AddRange(project.ClipsOf(slot)
+                        .Select(clip => clip.Entry.Name)
+                        .Where(name => name.Length > 0)
+                        .Distinct(StringComparer.Ordinal));
+
+                rows.Add(string.Join(Separator, fields));
+            }
+
+            var scene = new FbxScene(document);
+            FbxObject? root = scene.RootModels().FirstOrDefault()
+                ?? scene.OfClass("Model").FirstOrDefault();
+
+            if (root is null)
+                return;
+
+            root.Properties.SetUserString(ManifestProperty, string.Join(RowSeparator, rows));
+            scene.Flush();
+        }
+
+        /// <summary>The clip list a scene carries, by the stack name each was written for.</summary>
+        /// <remarks>
+        /// Public because it is the answer to "what animations does this file hold",
+        /// which a tool may want without importing any of them.
+        /// </remarks>
+        public static IReadOnlyDictionary<string, ClipRecord> Manifest(FbxDocument document)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+
+            var found = new Dictionary<string, ClipRecord>(StringComparer.OrdinalIgnoreCase);
+            var scene = new FbxScene(document);
+
+            foreach (FbxObject model in scene.OfClass("Model"))
+            {
+                string stored = model.Properties.GetString(ManifestProperty);
+
+                if (stored.Length == 0)
+                    continue;
+
+                foreach (string row in stored.Split(RowSeparator, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string[] fields = row.Split(Separator);
+
+                    if (fields.Length < 3 || fields[0].Length == 0)
+                        continue;
+
+                    int.TryParse(fields[2], System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.InvariantCulture, out int index);
+
+                    found[fields[0]] = new ClipRecord(fields[0], fields[1], index, fields[3..]);
+                }
+
+                break;
+            }
+
+            return found;
+        }
+
+        /// <summary>The manifest row a stack belongs to, however it has been renamed.</summary>
+        /// <remarks>
+        /// Blender writes a stack out as <c>Skeleton.nif|Skeleton.nif|1HMAttackA|Default</c>
+        /// -- the object, the action and the track, joined by bars -- so the name it was
+        /// given is in there rather than lost. Each part is tried rather than a fixed
+        /// position taken, because which part is the action is Blender's business and
+        /// another tool will decorate it differently or not at all.
+        /// </remarks>
+        private static ClipRecord? Recorded(
+            FbxObject stack, IReadOnlyDictionary<string, ClipRecord> manifest)
+        {
+            if (manifest.Count == 0)
+                return null;
+
+            foreach (string name in Names(stack.Name))
+                if (manifest.TryGetValue(name, out ClipRecord found))
+                    return found;
+
+            return null;
+        }
+
+        /// <summary>Every name a stack might be listed under, the whole one first.</summary>
+        public static IEnumerable<string> Names(string stackName)
+        {
+            if (string.IsNullOrEmpty(stackName))
+                yield break;
+
+            yield return stackName;
+
+            if (!stackName.Contains('|', StringComparison.Ordinal))
+                yield break;
+
+            foreach (string part in stackName.Split('|', StringSplitOptions.RemoveEmptyEntries))
+                yield return part;
         }
 
         /// <summary>

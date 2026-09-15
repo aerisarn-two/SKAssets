@@ -400,8 +400,15 @@ namespace SKAssets.Export
                 || scene.OfClass("Model").Any(m =>
                     m.Properties.GetString(HavokBridge.BodyPrefix + "ragdoll_bone").Length > 0);
 
-            int clips = scene.OfClass("AnimationStack")
-                .Count(stack => stack.Properties.GetString(ClipExchange.StoredNameProperty).Length > 0);
+            // Counted the way `ImportClips` resolves them, or a scene back from a DCC
+            // tool reports no clips and then imports 216 of them. The stack properties
+            // do not survive Blender and the manifest on the node does.
+            IReadOnlyDictionary<string, ClipExchange.ClipRecord> manifest =
+                ClipExchange.Manifest(document);
+
+            int clips = scene.OfClass("AnimationStack").Count(stack =>
+                stack.Properties.GetString(ClipExchange.StoredNameProperty).Length > 0
+                || ClipExchange.Names(stack.Name).Any(manifest.ContainsKey));
 
             return new SceneContents(hasMesh, hasRig, clips > 0, sources, clips);
         }
