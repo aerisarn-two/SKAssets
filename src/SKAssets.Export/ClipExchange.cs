@@ -523,6 +523,28 @@ namespace SKAssets.Export
             return null;
         }
 
+        /// <summary>Whether a stack is one of the creature's Havok clips.</summary>
+        /// <remarks>
+        /// Asked the same way the import resolves one, and that is the point of it
+        /// being here rather than written out at each call site. A stack used to say so
+        /// itself and three places read the property directly; then the manifest
+        /// arrived, so that a scene back from a DCC tool could still name its clips,
+        /// and those three places went on asking the stack. The clips imported
+        /// correctly and were left in the scene as well, and every mesh rebuilt out of
+        /// that scene took all 216 of them in as NIF animation -- a draugr's hair came
+        /// back as 3,911 blocks where its file holds 11.
+        /// </remarks>
+        /// <param name="stackName">The stack's name, however a tool has renamed it.</param>
+        /// <param name="storedName">What the stack itself says, where it still says it.</param>
+        /// <param name="manifest">The list on the node, from <see cref="Manifest"/>.</param>
+        public static bool IsClip(
+            string stackName, string storedName, IReadOnlyDictionary<string, ClipRecord> manifest)
+        {
+            ArgumentNullException.ThrowIfNull(manifest);
+
+            return storedName.Length > 0 || Names(stackName).Any(manifest.ContainsKey);
+        }
+
         /// <summary>Every name a stack might be listed under, the whole one first.</summary>
         public static IEnumerable<string> Names(string stackName)
         {

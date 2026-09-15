@@ -314,10 +314,13 @@ namespace SKAssets.Export
         private static FbxDocument WithoutClips(FbxDocument document)
         {
             var scene = new HavokScene(document);
+            IReadOnlyDictionary<string, ClipExchange.ClipRecord> listed = ClipExchange.Manifest(document);
 
             List<HavokObject> clips = [.. scene.OfClass("AnimationStack")
-                .Where(stack => stack.Properties
-                    .GetString(ClipExchange.StoredNameProperty).Length > 0)];
+                .Where(stack => ClipExchange.IsClip(
+                    stack.Name,
+                    stack.Properties.GetString(ClipExchange.StoredNameProperty),
+                    listed))];
 
             if (clips.Count == 0)
                 return document;
@@ -330,8 +333,13 @@ namespace SKAssets.Export
             var copied = new HavokScene(copy);
 
             foreach (HavokObject stack in copied.OfClass("AnimationStack").ToList())
-                if (stack.Properties.GetString(ClipExchange.StoredNameProperty).Length > 0)
+                if (ClipExchange.IsClip(
+                        stack.Name,
+                        stack.Properties.GetString(ClipExchange.StoredNameProperty),
+                        listed))
+                {
                     copied.Remove(stack);
+                }
 
             copied.Flush();
             return copy;

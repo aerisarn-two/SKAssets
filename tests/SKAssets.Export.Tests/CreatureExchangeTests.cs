@@ -270,6 +270,60 @@ namespace SKAssets.Export.Tests
             Assert.Equal(1, Count(body, "BSTriShape"));
         }
 
+        /// <summary>
+        /// The clips stay out of the meshes even when the stacks no longer say so.
+        /// </summary>
+        /// <remarks>
+        /// A creature's animations are Havok clips, and a mesh rebuilt out of its scene
+        /// must not take them in as NIF animation as well. The stacks were left out by
+        /// asking each one whether it was a clip, which it answered from a property of
+        /// its own -- and then the manifest arrived so that a scene back from a DCC
+        /// tool could still name its clips, and this question went on being put to the
+        /// stack. So the clips imported correctly into the project *and* stayed in the
+        /// scene, and every mesh built from it swallowed all of them: a draugr's hair
+        /// came back as 3,911 blocks where its file holds 11, its skeleton as 40,798
+        /// where it holds 187.
+        ///
+        /// Both halves are asserted here, because the failure was that they disagreed:
+        /// the clips are recognised, and none of them is in the mesh.
+        /// </remarks>
+        [ClipCorpusFact]
+        public void TheClipsStayOutOfTheMeshesWhateverTheStacksAreCalled()
+        {
+            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
+            var db = NifXmlDatabase.LoadEmbedded();
+
+            FbxDocument scene = CreatureExchange.Export(assets, db, out _);
+            var live = new FbxScene(scene);
+
+            // What Blender leaves: no properties, and a name of its own choosing.
+            foreach (FbxObject stack in live.OfClass("AnimationStack").ToList())
+            {
+                string name = stack.Name;
+
+                stack.Properties.Remove(ClipExchange.StoredNameProperty);
+                stack.Properties.Remove(ClipExchange.CacheIndexProperty);
+                stack.Properties.Remove(ClipExchange.GeneratorsProperty);
+
+                stack.QualifiedName = $"AnimStack::skeleton.nif|skeleton.nif|{name}|Default";
+            }
+
+            live.Flush();
+
+            SceneContents contents = CreatureExchange.Inspect(scene);
+            Assert.True(contents.HasClips, "the clips were not recognised at all");
+
+            CreatureImport back = CreatureExchange.Import(scene, db);
+
+            foreach ((string file, NifModel model) in back.Meshes)
+            {
+                Assert.Equal(0, Count(model, "NiControllerSequence"));
+                Assert.True(
+                    model.Blocks.Count < 500,
+                    $"{file} came back with {model.Blocks.Count} blocks, so it swallowed the clips");
+            }
+        }
+
         /// <summary>The first root the footer names.</summary>
         private static NifItem RootBlock(NifModel model) =>
             model.GetBlock(model.FindItem(model.Footer, "Roots")!.Children[0])!;

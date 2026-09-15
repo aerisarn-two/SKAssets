@@ -409,9 +409,8 @@ namespace SKAssets.Export
             IReadOnlyDictionary<string, ClipExchange.ClipRecord> manifest =
                 ClipExchange.Manifest(document);
 
-            int clips = scene.OfClass("AnimationStack").Count(stack =>
-                stack.Properties.GetString(ClipExchange.StoredNameProperty).Length > 0
-                || ClipExchange.Names(stack.Name).Any(manifest.ContainsKey));
+            int clips = scene.OfClass("AnimationStack").Count(stack => ClipExchange.IsClip(
+                stack.Name, stack.Properties.GetString(ClipExchange.StoredNameProperty), manifest));
 
             return new SceneContents(hasMesh, hasRig, clips > 0, sources, clips);
         }
@@ -446,6 +445,8 @@ namespace SKAssets.Export
 
             FbxDocument copy = FbxDocument.Load(buffer);
             var scene = new HavokScene(copy);
+
+            IReadOnlyDictionary<string, ClipExchange.ClipRecord> clips = ClipExchange.Manifest(copy);
 
             var models = scene.OfClass("Model").ToList();
             var keep = new HashSet<long>();
@@ -482,7 +483,8 @@ namespace SKAssets.Export
             foreach (HavokObject o in scene.Objects.ToList())
             {
                 if (o.Class == "AnimationStack"
-                    && o.Properties.GetString(ClipExchange.StoredNameProperty).Length > 0)
+                    && ClipExchange.IsClip(
+                        o.Name, o.Properties.GetString(ClipExchange.StoredNameProperty), clips))
                 {
                     doomed.Add(o);
                     continue;
