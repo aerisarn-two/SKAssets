@@ -266,7 +266,8 @@ namespace SKAssets.Export
         }
 
         /// <summary>The mesh half, which NIFBX rebuilds on its own.</summary>
-        public static NifModel ImportMesh(FbxDocument document, NifXmlDatabase database)
+        public static NifModel ImportMesh(
+            FbxDocument document, NifXmlDatabase database, FbxToNifOptions? options = null)
         {
             ArgumentNullException.ThrowIfNull(document);
             ArgumentNullException.ThrowIfNull(database);
@@ -282,7 +283,7 @@ namespace SKAssets.Export
 
             try
             {
-                return new FbxToNif(new FbxScene(WithoutClips(document))).Convert(database);
+                return new FbxToNif(new FbxScene(WithoutClips(document)), options).Convert(database);
             }
             finally
             {

@@ -320,7 +320,8 @@ namespace SKAssets.Export
             FbxDocument document,
             NifXmlDatabase database,
             ActorProject? project = null,
-            IAnimationCodec? codec = null)
+            IAnimationCodec? codec = null,
+            FbxToNifOptions? options = null)
         {
             ArgumentNullException.ThrowIfNull(document);
             ArgumentNullException.ThrowIfNull(database);
@@ -335,14 +336,18 @@ namespace SKAssets.Export
             if (hasMesh && sources.Count > 1)
             {
                 foreach (string source in sources)
-                    meshes[source] = Rebuild(document, database, source);
+                    meshes[source] = Rebuild(document, database, source, options);
 
                 held.Add($"{sources.Count} meshes");
             }
             else if (hasMesh)
             {
-                meshes[sources.Count == 1 ? sources[0] : DefaultSkeletonName] =
-                    SkeletonExchange.ImportMesh(document, database);
+                string only = sources.Count == 1 ? sources[0] : DefaultSkeletonName;
+
+                FbxToNifOptions settings = options ?? new FbxToNifOptions();
+
+                meshes[only] = WithRoot(
+                    settings, only, () => SkeletonExchange.ImportMesh(document, database, settings));
 
                 held.Add("a mesh");
             }
@@ -422,7 +427,8 @@ namespace SKAssets.Export
         /// the clips' business and not any mesh's. The bones a body shares with the
         /// skeleton stay, because they belong to both.
         /// </remarks>
-        private static NifModel Rebuild(FbxDocument document, NifXmlDatabase database, string source)
+        private static NifModel Rebuild(
+            FbxDocument document, NifXmlDatabase database, string source, FbxToNifOptions? options)
         {
             FbxDocument only = Only(document, source);
 
@@ -430,8 +436,57 @@ namespace SKAssets.Export
             // is this method's own, so the mesh spelling goes back and stays.
             JointBridge.InMeshNames(only);
 
-            return new FbxToNif(new FbxScene(only)).Convert(database);
+            FbxToNifOptions settings = options ?? new FbxToNifOptions();
+
+            return WithRoot(
+                settings, source, () => new FbxToNif(new FbxScene(only), settings).Convert(database));
         }
+
+        /// <summary>The name a rebuilt file's root block should carry.</summary>
+        /// <remarks>
+        /// A NIF's root carries the file's name -- `Skeleton.nif`, `DraugrMale02.nif`.
+        /// The scene these are rebuilt from is one scene with one root, so left alone
+        /// every file a creature was taken apart into came back rooted at `Scene`,
+        /// which is not what any of them said and is the first thing a comparison
+        /// against the original trips over.
+        /// </remarks>
+        private static string RootFor(string source) => Path.GetFileNameWithoutExtension(source);
+
+        /// <summary>
+        /// Names the root for the length of one conversion, and puts the name back.
+        /// </summary>
+        /// <remarks>
+        /// Set and restored rather than copied. <c>FbxToNifOptions</c> is a plain
+        /// options bag, so a copy means listing its properties here, and the next one
+        /// added to it would be dropped by this method without a word -- a file
+        /// quietly converting under settings the caller did not ask for. The same
+        /// set-and-restore <see cref="SkeletonExchange.ImportMesh"/> does with the
+        /// joint names, for the same reason: the borrowed thing goes back as it was.
+        ///
+        /// A caller that named the root itself keeps its name. <c>Scene</c> is the
+        /// default nobody chose.
+        /// </remarks>
+        private static T WithRoot<T>(FbxToNifOptions options, string source, Func<T> convert)
+        {
+            string previous = options.RootName;
+            bool fill = previous == DefaultRootName;
+
+            if (fill)
+                options.RootName = RootFor(source);
+
+            try
+            {
+                return convert();
+            }
+            finally
+            {
+                if (fill)
+                    options.RootName = previous;
+            }
+        }
+
+        /// <summary>The root name <c>FbxToNifOptions</c> gives a scene that names none.</summary>
+        private const string DefaultRootName = "Scene";
 
         /// <summary>A copy of the scene holding only what one file contributed.</summary>
         private static FbxDocument Only(FbxDocument document, string source)
