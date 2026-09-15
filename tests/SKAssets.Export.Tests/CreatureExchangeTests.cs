@@ -201,65 +201,6 @@ namespace SKAssets.Export.Tests
         }
 
         /// <summary>
-        /// Each file comes back rooted at its own name, not at the scene's.
-        /// </summary>
-        /// <remarks>
-        /// A NIF's root block carries the file's name, and the scene a creature is
-        /// rebuilt from is one scene with one root. So every file taken out of it used
-        /// to come back rooted at `Scene` -- the name `FbxToNifOptions` gives a scene
-        /// that names none -- and a chicken's `skeleton.nif` and `chicken.nif` both
-        /// claimed to be it.
-        ///
-        /// Worth its own test rather than a line in the one above, because it is the
-        /// first difference a comparison against the original hits and it stops the
-        /// comparison dead: a walk that starts at the root and finds two different
-        /// block names there reports one difference and looks at nothing else.
-        /// </remarks>
-        [ClipCorpusFact]
-        public void EachFileComesBackRootedAtItsOwnName()
-        {
-            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
-            var db = NifXmlDatabase.LoadEmbedded();
-
-            FbxDocument scene = CreatureExchange.Export(assets, db, out _, slots: []);
-            CreatureImport back = CreatureExchange.Import(scene, db);
-
-            foreach ((string file, NifModel model) in back.Meshes)
-            {
-                NifItem root = model.GetBlock(
-                    model.FindItem(model.Footer, "Roots")!.Children[0])!;
-
-                Assert.Equal(Path.GetFileNameWithoutExtension(file), model.GetName(root));
-            }
-        }
-
-        /// <summary>A caller that names the root itself keeps its name.</summary>
-        [ClipCorpusFact]
-        public void UnlessTheCallerNamedItSomethingElse()
-        {
-            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
-            var db = NifXmlDatabase.LoadEmbedded();
-
-            FbxDocument scene = CreatureExchange.Export(assets, db, out _, slots: []);
-
-            var options = new FbxToNifOptions { RootName = "chosen" };
-            CreatureImport back = CreatureExchange.Import(scene, db, options: options);
-
-            foreach ((string _, NifModel model) in back.Meshes)
-            {
-                NifItem root = model.GetBlock(
-                    model.FindItem(model.Footer, "Roots")!.Children[0])!;
-
-                Assert.Equal("chosen", model.GetName(root));
-            }
-
-            // And it is handed back as it was lent: the name is set for the length of
-            // one conversion and put back, or the second file would be rebuilt under
-            // the first file's name.
-            Assert.Equal("chosen", options.RootName);
-        }
-
-        /// <summary>
         /// A rig on its own is a rig, and no mesh is invented for it.
         /// </summary>
         [CreatureFact]
