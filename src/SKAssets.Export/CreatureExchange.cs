@@ -1,3 +1,4 @@
+using System.Globalization;
 using HKFBX.Codec;
 using HKFBX.Hkx;
 using HKFBX.Model;
@@ -585,24 +586,44 @@ namespace SKAssets.Export
             if (adopted.Count == 0)
                 return;
 
-            // Reconnected through NIFBX's view of the same document: that view can join
-            // two objects where this one can remove one, and between them that is a
-            // reparent. Each writes the document once and in turn -- flushing one after
-            // the other has written puts the older connection list back and undoes the
-            // join.
             scene.Flush();
+            Reparent(document, adopted.Select(a => a.Id).ToHashSet(), own.Id);
+        }
 
-            var joined = new FbxScene(document);
-            Dictionary<long, FbxObject> models = joined.OfClass("Model").ToDictionary(m => m.Id);
-
-            if (!models.TryGetValue(own.Id, out FbxObject? root))
+        /// <summary>Moves nodes under a new parent, rather than giving them a second.</summary>
+        /// <remarks>
+        /// Written on the document because neither scene view can do it: one can remove
+        /// an object and the other can join two, and joining a node that already has a
+        /// parent gives it two rather than moving it. A node Blender left at the top of
+        /// the scene is connected to the scene root, so joining it to the file's root
+        /// left it reachable both ways and NIFBX wrote it out twice -- a draugr's hair
+        /// came back with two of its mesh, 442 vertices where it has 221, and 315
+        /// influence slots naming a different bone with the weight still on them.
+        ///
+        /// So every object-to-object connection into these nodes goes, and exactly one
+        /// takes its place.
+        /// </remarks>
+        private static void Reparent(FbxDocument document, IReadOnlySet<long> movers, long parent)
+        {
+            if (document["Connections"] is not { } connections)
                 return;
 
-            foreach (HavokObject node in adopted)
-                if (models.TryGetValue(node.Id, out FbxObject? moved))
-                    joined.Connect(moved, root);
+            connections.Nodes.RemoveAll(c =>
+                c.Name == "C"
+                && c.Properties.Count >= 3
+                && (c.Properties[0] as string ?? "OO") == "OO"
+                && movers.Contains(Convert.ToInt64(c.Properties[1], CultureInfo.InvariantCulture)));
 
-            joined.Flush();
+            foreach (long mover in movers)
+            {
+                var joined = new LeanMeshIO.Formats.Fbx.FbxNode("C");
+
+                joined.Properties.Add("OO");
+                joined.Properties.Add(mover);
+                joined.Properties.Add(parent);
+
+                connections.Nodes.Add(joined);
+            }
         }
 
         /// <summary>Whether a node says it belongs to the given file.</summary>
