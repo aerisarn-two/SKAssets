@@ -646,28 +646,40 @@ namespace SKAssets.Export
         private static HavokObject? Parent(HavokScene scene, HavokObject model) =>
             scene.ParentsOf(model.Id).FirstOrDefault(p => p.Class == "Model");
 
-        /// <summary>Takes the extra data off a bone a mesh has borrowed.</summary>
+        /// <summary>Takes the skeleton's own business off a bone a mesh has borrowed.</summary>
         /// <remarks>
-        /// A bone states things about itself that are the skeleton's business and
-        /// no mesh's. The game ships `DraugrMale02.nif` with one extra-data block,
-        /// the inventory marker on its own root; the four `TwistOverride` floats on
-        /// the arm twist bones live in `Skeleton.nif`, and rode into the body with
-        /// the bones the body is skinned to.
+        /// A bone states things that are the skeleton's and no mesh's, and they rode
+        /// into the body with the bones the body is skinned to.
+        ///
+        /// Extra data is one. The game ships `DraugrMale02.nif` with a single
+        /// extra-data block, the inventory marker on its own root, while the four
+        /// `TwistOverride` floats on the arm twist bones live in `Skeleton.nif`.
+        ///
+        /// Controllers are the other, and cost more. An ice wraith's skeleton hangs
+        /// 11 `BSLagBoneController` on its bones and a deer's hangs 39
+        /// `NiTransformController`; the bodies skinned to those bones came back
+        /// carrying all 11 and 38 of the 39, animation the files never had. The
+        /// skeleton keeps them, because the skeleton is where they are stated.
         /// </remarks>
         private static void Strip(FbxObject model)
         {
-            string count = model.Properties.GetString(FbxExtraDataWriter.CountProperty);
+            Shed(model, FbxExtraDataWriter.CountProperty, FbxExtraDataWriter.Prefix);
+            Shed(model, FbxNodeControllers.CountProperty, FbxNodeControllers.Prefix);
+        }
 
-            if (count.Length == 0)
+        /// <summary>Removes a counted run of properties and the count that names it.</summary>
+        private static void Shed(FbxObject model, string count, string prefix)
+        {
+            if (model.Properties.GetString(count).Length == 0)
                 return;
 
             foreach (FbxProperty70 property in model.Properties.All.ToList())
             {
-                if (property.Name.StartsWith(FbxExtraDataWriter.Prefix, StringComparison.Ordinal))
+                if (property.Name.StartsWith(prefix, StringComparison.Ordinal))
                     model.Properties.Remove(property.Name);
             }
 
-            model.Properties.Remove(FbxExtraDataWriter.CountProperty);
+            model.Properties.Remove(count);
         }
 
         /// <summary>Writes a transform onto a node, replacing the one it had.</summary>
