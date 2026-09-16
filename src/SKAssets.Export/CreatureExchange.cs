@@ -296,6 +296,10 @@ namespace SKAssets.Export
                 }
             }
 
+            // And the skeleton's own pose for every bone a body disagrees about, on
+            // the one node a DCC tool keeps properties on. See `SkeletonPoseProperty`.
+            RememberSkeletonPose(scene, Path.GetFileName(assets.Skeleton));
+
             ClipReport? clips = assets.Project is { } project && rig is not null
                 ? ClipExchange.AddClips(scene, rig.Rig, project, slots, codec)
                 : null;
@@ -549,6 +553,12 @@ namespace SKAssets.Export
                 Place(placed, world[model.Id]);
                 Strip(placed);
             }
+
+            // This file's own bones where a body placed them differently and a DCC
+            // tool kept the body's. A no-op straight out of the converter, where the
+            // scene already holds these. See `SkeletonPoseProperty`.
+            if (own is { } ownId && view[ownId] is { } ownRoot)
+                RestoreOwnPose(view, ownRoot);
 
             var doomed = new List<HavokObject>();
             var queue = new Queue<HavokObject>();
@@ -943,6 +953,140 @@ namespace SKAssets.Export
             }
 
             scene.Flush();
+        }
+
+        /// <summary>The skeleton's own pose for the bones a body places differently.</summary>
+        /// <remarks>
+        /// Where a skeleton and a body disagree about a bone, both answers are kept
+        /// -- the body's on the bone, by <see cref="RememberPose"/> -- and straight
+        /// out of the converter the scene holds the skeleton's. After a DCC tool it
+        /// does not. Blender builds its armature's rest pose from the skin's bind
+        /// pose, which is the body's, and writes that back: measured on a cow, the
+        /// scene held the skeleton's position for all 23 of the bones its two files
+        /// disagree about going in, and the body's for all 23 coming out. So the
+        /// skeleton came back moved -- 25 bones, its ribcage 3.04 units and 15
+        /// degrees -- where the body came back right.
+        ///
+        /// Nor can the bone carry it, because Blender drops a bone's properties.
+        /// It keeps the armature object's, and the armature object is the
+        /// skeleton's root, so the skeleton's answers go there as one table.
+        /// </remarks>
+        public const string SkeletonPoseProperty = "sk_skeleton_pose";
+
+        /// <summary>Writes down the skeleton's pose wherever a body disagreed with it.</summary>
+        private static void RememberSkeletonPose(FbxDocument document, string skeleton)
+        {
+            var scene = new FbxScene(document);
+
+            FbxObject? root = scene.RootModels().FirstOrDefault(m =>
+                m.Properties.GetString(NifNodeProperty).Length > 0
+                && m.Properties.GetString(SourceProperty)
+                    .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
+                    .Contains(skeleton, StringComparer.OrdinalIgnoreCase));
+
+            if (root is null)
+                return;
+
+            var entries = new List<string>();
+
+            foreach (FbxObject model in scene.OfClass("Model"))
+            {
+                string poses = model.Properties.GetString(PoseProperty);
+
+                if (poses.Length == 0)
+                    continue;
+
+                NifTransform here = FbxGlobalTransform.Of(scene, model);
+                bool disagrees = false;
+
+                foreach (string entry in poses.Split(Separator, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    int at = entry.IndexOf('=');
+
+                    if (at > 0 && Read(entry[(at + 1)..]) is { } theirs && Apart(theirs, here) > 0.001)
+                    {
+                        disagrees = true;
+                        break;
+                    }
+                }
+
+                if (disagrees)
+                    entries.Add($"{NameEncoding.Unsanitize(model.Name)}={Numbers(here)}");
+            }
+
+            if (entries.Count == 0)
+                return;
+
+            root.Properties.SetUserString(SkeletonPoseProperty, string.Join(";", entries));
+            scene.Flush();
+        }
+
+        /// <summary>
+        /// Puts a file's own bones back where its root's table says, keeping every
+        /// other node where the scene has it.
+        /// </summary>
+        private static void RestoreOwnPose(FbxScene view, FbxObject root)
+        {
+            var wanted = new Dictionary<string, NifTransform>(StringComparer.Ordinal);
+
+            foreach (string entry in root.Properties.GetString(SkeletonPoseProperty)
+                         .Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                int at = entry.IndexOf('=');
+
+                if (at > 0 && Read(entry[(at + 1)..]) is { } pose)
+                    wanted[entry[..at]] = pose;
+            }
+
+            if (wanted.Count == 0)
+                return;
+
+            // Every node under the root, parents before children, with where it
+            // stands now -- measured before anything moves, since moving a parent
+            // changes what its children's own numbers mean.
+            var order = new List<FbxObject>();
+            var queue = new Queue<FbxObject>();
+            queue.Enqueue(root);
+
+            while (queue.Count > 0)
+            {
+                FbxObject at = queue.Dequeue();
+                order.Add(at);
+
+                foreach (FbxObject child in view.ChildrenOf(at.Id).Where(c => c.Class == "Model"))
+                    queue.Enqueue(child);
+            }
+
+            var now = order.ToDictionary(m => m.Id, m => FbxGlobalTransform.Of(view, m));
+            var target = new Dictionary<long, NifTransform>();
+
+            foreach (FbxObject model in order)
+            {
+                target[model.Id] = wanted.TryGetValue(NameEncoding.Unsanitize(model.Name), out NifTransform pose)
+                    ? pose
+                    : now[model.Id];
+            }
+
+            foreach (FbxObject model in order.Skip(1))
+            {
+                if (view.ParentsOf(model.Id).FirstOrDefault(p => p.Class == "Model") is not { } parent
+                    || !target.TryGetValue(parent.Id, out NifTransform above))
+                {
+                    continue;
+                }
+
+                if (!System.Numerics.Matrix4x4.Invert(above.ToMatrix(), out System.Numerics.Matrix4x4 inverse))
+                    continue;
+
+                Place(model, NifTransform.FromMatrix(target[model.Id].ToMatrix() * inverse));
+            }
+        }
+
+        private static double Apart(NifTransform a, NifTransform b)
+        {
+            NifVector3 p = a.Translation, q = b.Translation;
+            double x = p.X - q.X, y = p.Y - q.Y, z = p.Z - q.Z;
+            return Math.Sqrt((x * x) + (y * y) + (z * z));
         }
 
         /// <summary>Where a file said a bone stands, or null if it never said.</summary>
