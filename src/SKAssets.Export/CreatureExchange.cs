@@ -172,24 +172,48 @@ namespace SKAssets.Export
         /// one the scene is built without clips.
         /// </param>
         /// <returns>The assets, or null where the folder holds no skeleton.</returns>
+        /// <remarks>
+        /// The two names are matched however they are spelled. The game ships them
+        /// capitalised -- `meshes/Actors/Draugr/Character Assets/Skeleton.nif` -- and
+        /// asking the filesystem for `skeleton.nif` finds that on Windows and does
+        /// not find it anywhere else. So on Linux a creature extracted with the
+        /// game's own names was not a creature at all: `convert` on the draugr's
+        /// folder took the four files for four unrelated ones, and wrote `Skeleton.nif`
+        /// and `Skeleton.hkx` both out as `Skeleton.fbx`, one over the other.
+        /// </remarks>
         public static CreatureAssets? Find(string folder, SkyrimCache? cache = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(folder);
 
-            string skeleton = Path.Combine(folder, "skeleton.nif");
-
-            if (!File.Exists(skeleton))
+            if (!Directory.Exists(folder))
                 return null;
 
-            string rig = Path.Combine(folder, "skeleton.hkx");
+            string? skeleton = Beside(folder, "skeleton.nif");
+
+            if (skeleton is null)
+                return null;
+
+            string? rig = Beside(folder, "skeleton.hkx");
 
             List<string> meshes = [.. Directory
                 .EnumerateFiles(folder, "*.nif", SearchOption.AllDirectories)
                 .Where(path => !string.Equals(path, skeleton, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)];
 
-            return new CreatureAssets(
-                NameOf(folder), skeleton, File.Exists(rig) ? rig : null, meshes, ProjectFor(folder, cache));
+            return new CreatureAssets(NameOf(folder), skeleton, rig, meshes, ProjectFor(folder, cache));
+        }
+
+        /// <summary>A file in a folder, found whatever case its name is written in.</summary>
+        private static string? Beside(string folder, string name)
+        {
+            string exact = Path.Combine(folder, name);
+
+            if (File.Exists(exact))
+                return exact;
+
+            return Directory.EnumerateFiles(folder)
+                .FirstOrDefault(path => string.Equals(
+                    Path.GetFileName(path), name, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>

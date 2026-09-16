@@ -402,6 +402,43 @@ namespace SKAssets.Export.Tests
             Assert.Null(back.Clips);
         }
 
+        /// <summary>
+        /// A creature is a creature however its files are capitalised.
+        /// </summary>
+        /// <remarks>
+        /// The game ships them capitalised -- `Character Assets/Skeleton.nif` -- and
+        /// every fixture here happens to be lowercase, so asking the filesystem for
+        /// the exact name passed on Windows and on this suite and failed on the one
+        /// case that matters: a Linux box with the game's own files. `convert` on a
+        /// draugr's folder saw four unrelated files instead of a creature, and wrote
+        /// `Skeleton.nif` and `Skeleton.hkx` both out as `Skeleton.fbx`.
+        /// </remarks>
+        [Fact]
+        public void ACreatureIsFoundHoweverItsNamesAreSpelled()
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "skassets-case-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+
+            try
+            {
+                File.WriteAllBytes(Path.Combine(folder, "Skeleton.nif"), []);
+                File.WriteAllBytes(Path.Combine(folder, "Skeleton.hkx"), []);
+
+                CreatureAssets? found = CreatureExchange.Find(folder);
+
+                Assert.NotNull(found);
+                Assert.Equal("Skeleton.nif", Path.GetFileName(found!.Skeleton));
+                Assert.Equal("Skeleton.hkx", Path.GetFileName(found.Rig));
+
+                // And the skeleton is not also counted as one of the bodies.
+                Assert.Empty(found.Meshes);
+            }
+            finally
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+
         private static string Census(NifModel model) =>
             string.Join(' ', model.Blocks.GroupBy(b => b.Def.Name)
                 .OrderBy(g => g.Key, StringComparer.Ordinal)
