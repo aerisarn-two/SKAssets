@@ -157,8 +157,8 @@ namespace SKAssets.Export.Tests
                         changed.Add(pair.Folder);
                 }
 
-                Assert.Empty(lost);
-                Assert.Empty(changed);
+                Assert.True(lost.Count == 0, "constraints lost: " + string.Join("; ", lost.Take(8)));
+                Assert.True(changed.Count == 0, "havok changed: " + string.Join("; ", changed.Take(8)));
             }
             finally { Directory.Delete(work, recursive: true); }
         }
