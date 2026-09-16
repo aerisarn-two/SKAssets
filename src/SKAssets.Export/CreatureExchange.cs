@@ -563,7 +563,13 @@ namespace SKAssets.Export
                     bool clip = ClipExchange.IsClip(
                         o.Name, o.Properties.GetString(ClipExchange.StoredNameProperty), clips);
 
-                    if (clip || !Claims(o, source))
+                    // A stack that claims nothing was put there by something that
+                    // does not mark them -- an older scene, or a tool that is not
+                    // this one -- and there is no telling whose it is, so it stays.
+                    // Only a stack that says it belongs to another file goes.
+                    bool stated = o.Properties.GetString(SourceProperty).Length > 0;
+
+                    if (clip || (stated && !Claims(o, source)))
                         doomed.Add(o);
 
                     continue;
