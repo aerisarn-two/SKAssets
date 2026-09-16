@@ -597,6 +597,31 @@ namespace SKAssets.Export
                 }
             }
 
+            // And the animation of a bone this file only borrows. A skeleton's
+            // controllers drive its own bones, and a body skinned to those bones is
+            // not where they live: a deer's `ReinDeer_Skin.nif` came back carrying
+            // 38 `NiTransformController` and a chaurus's skin 31, all of them the
+            // skeleton's. The stack they ride in says whose it is on the way out and
+            // not after a DCC tool, which writes stacks of its own with nothing on
+            // them -- so the curves are judged by the bone they drive instead, which
+            // does survive.
+            var seenCurve = new HashSet<long>(doomed.Select(o => o.Id));
+
+            foreach (HavokObject bone in borrowed)
+            {
+                foreach ((HavokObject driver, _) in scene.PropertyConnectionsTo(bone.Id))
+                {
+                    if (driver.Class == "AnimationCurveNode" && seenCurve.Add(driver.Id))
+                    {
+                        doomed.Add(driver);
+
+                        foreach (HavokObject curve in scene.ChildrenOf(driver.Id))
+                            if (curve.Class == "AnimationCurve" && seenCurve.Add(curve.Id))
+                                doomed.Add(curve);
+                    }
+                }
+            }
+
             foreach (HavokObject o in doomed)
                 scene.Remove(o);
 
