@@ -278,6 +278,13 @@ namespace SKAssets.Export
                     // be written back out with the bones it had.
                     Claim(scene, result.ReusedNames, name);
 
+                    // And where this body put it, which the merge has just thrown
+                    // away. The two files do not have to agree: a cow's
+                    // `HighlandCow.nif` states 23 of its 48 bones somewhere other
+                    // than `skeleton.nif` does, its ribcage 3.04 units apart, and
+                    // writing the skeleton's answer into the body moved all 23.
+                    RememberPose(scene, body, result.ReusedNames, name);
+
                     merged.Add(name);
                     unbound.AddRange(result.UnboundNames);
                 }
@@ -528,7 +535,10 @@ namespace SKAssets.Export
                     continue;
 
                 borrowed.Add(model);
-                world[model.Id] = FbxGlobalTransform.Of(view, placed);
+
+                // This file's own answer where it gave one, since the merge kept
+                // whichever file was read first and the two need not agree.
+                world[model.Id] = PoseFor(model, source) ?? FbxGlobalTransform.Of(view, placed);
             }
 
             foreach (HavokObject model in borrowed)
@@ -832,6 +842,98 @@ namespace SKAssets.Export
         }
 
         /// <summary>Says that the named nodes belong to a file as well.</summary>
+        /// <summary>The property a file's own idea of a shared bone travels in.</summary>
+        /// <remarks>
+        /// Two files that share a bone need not place it alike, and the merge keeps
+        /// only the first. The other's answer is kept here, against the file that
+        /// gave it, so rebuilding that file can put its own bones back where it had
+        /// them rather than where the skeleton has them.
+        /// </remarks>
+        public const string PoseProperty = "sk_source_pose";
+
+        /// <summary>Writes down where one file put the bones the merge reused.</summary>
+        private static void RememberPose(
+            FbxDocument document, FbxDocument source, IReadOnlyList<string> names, string file)
+        {
+            if (names.Count == 0)
+                return;
+
+            var from = new FbxScene(source);
+            var wanted = new HashSet<string>(names, StringComparer.Ordinal);
+
+            var stated = new Dictionary<string, NifTransform>(StringComparer.Ordinal);
+
+            foreach (FbxObject model in from.OfClass("Model"))
+                if (wanted.Contains(model.Name))
+                    stated[model.Name] = FbxGlobalTransform.Of(from, model);
+
+            if (stated.Count == 0)
+                return;
+
+            var scene = new FbxScene(document);
+
+            foreach (FbxObject model in scene.OfClass("Model"))
+            {
+                if (!stated.TryGetValue(model.Name, out NifTransform pose))
+                    continue;
+
+                string was = model.Properties.GetString(PoseProperty);
+                string entry = $"{file}={Numbers(pose)}";
+
+                model.Properties.SetUserString(
+                    PoseProperty, was.Length == 0 ? entry : was + Separator + entry);
+            }
+
+            scene.Flush();
+        }
+
+        /// <summary>Where a file said a bone stands, or null if it never said.</summary>
+        private static NifTransform? PoseFor(HavokObject model, string file)
+        {
+            foreach (string entry in model.Properties.GetString(PoseProperty)
+                         .Split(Separator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int at = entry.IndexOf('=');
+
+                if (at > 0 && entry[..at].Equals(file, StringComparison.OrdinalIgnoreCase))
+                    return Read(entry[(at + 1)..]);
+            }
+
+            return null;
+        }
+
+        private static string Numbers(NifTransform transform)
+        {
+            System.Numerics.Matrix4x4 m = transform.ToMatrix();
+
+            return string.Join(",", new[]
+            {
+                m.M11, m.M12, m.M13, m.M14, m.M21, m.M22, m.M23, m.M24,
+                m.M31, m.M32, m.M33, m.M34, m.M41, m.M42, m.M43, m.M44
+            }.Select(v => v.ToString("R", CultureInfo.InvariantCulture)));
+        }
+
+        private static NifTransform? Read(string text)
+        {
+            string[] parts = text.Split(',');
+
+            if (parts.Length != 16)
+                return null;
+
+            var m = new float[16];
+
+            for (int i = 0; i < 16; i++)
+                if (!float.TryParse(parts[i], System.Globalization.NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out m[i]))
+                {
+                    return null;
+                }
+
+            return NifTransform.FromMatrix(new System.Numerics.Matrix4x4(
+                m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7],
+                m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]));
+        }
+
         private static void Claim(FbxDocument document, IReadOnlyList<string> names, string name)
         {
             if (names.Count == 0) return;
