@@ -482,10 +482,11 @@ namespace SKAssets.Export
             var borrowed = new List<HavokObject>();
             var world = new Dictionary<long, NifTransform>();
             var view = new FbxScene(copy);
+            long? own = OwnRoot(scene, models, source);
 
             foreach (HavokObject model in models)
             {
-                if (!keep.Contains(model.Id) || !Borrowed(model, source))
+                if (!keep.Contains(model.Id) || Owns(scene, model, own))
                     continue;
 
                 if (view[model.Id] is not { } placed)
@@ -550,16 +551,55 @@ namespace SKAssets.Export
             return copy;
         }
 
-        /// <summary>Whether a node is another file's as well as this one's.</summary>
+        /// <summary>The topmost node this file states, which is the file's own root.</summary>
+        private static long? OwnRoot(
+            HavokScene scene, IReadOnlyList<HavokObject> models, string source)
+        {
+            // Only a node standing at the top of the scene, which is what a file's
+            // root is before anything is moved. Every bone a mesh is skinned to
+            // claims that mesh and states a nif block too, so asking for the
+            // topmost claimant picks a bone out of the middle of the skeleton and
+            // calls it the file.
+            foreach (HavokObject model in models)
+            {
+                if (Parent(scene, model) is null
+                    && Claims(model, source)
+                    && model.Properties.GetString(NifNodeProperty).Length > 0)
+                {
+                    return model.Id;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Whether a node belongs to this file's own tree rather than being borrowed.</summary>
         /// <remarks>
-        /// Which is what a bone is, in a scene holding a whole creature: the skeleton
-        /// states it and every mesh skinned to it names it. A mesh's own nodes -- its
-        /// root, its shapes -- claim one file and only one.
+        /// Which file a node *belongs* to cannot be read off the list of files that
+        /// name it: a bone is named by the skeleton that states it and by every mesh
+        /// skinned to it, and the list says so without saying which of them it is.
+        /// Where it hangs says. A skeleton's bones stand under the skeleton's root,
+        /// so rebuilding the skeleton finds them at home and leaves them alone --
+        /// down to the `TwistOverride` floats on the arm twist bones, which are the
+        /// skeleton's own and went missing when "named by more than one file" was
+        /// taken to mean "borrowed".
         /// </remarks>
-        private static bool Borrowed(HavokObject model, string source) =>
-            model.Properties.GetString(SourceProperty)
-                .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
-                .Any(s => !s.Equals(source, StringComparison.OrdinalIgnoreCase));
+        private static bool Owns(HavokScene scene, HavokObject model, long? own)
+        {
+            if (own is not { } root)
+                return true;
+
+            for (HavokObject? at = model; at is not null; at = Parent(scene, at))
+            {
+                if (at.Id == root)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static HavokObject? Parent(HavokScene scene, HavokObject model) =>
+            scene.ParentsOf(model.Id).FirstOrDefault(p => p.Class == "Model");
 
         /// <summary>Takes the extra data off a bone a mesh has borrowed.</summary>
         /// <remarks>
