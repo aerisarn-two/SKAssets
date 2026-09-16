@@ -199,16 +199,13 @@ namespace SKAssets.Export.Tests
             NifModel shipped = NifModel.Load(
                 Path.Combine(Path.GetDirectoryName(assets.Skeleton)!, "chicken.nif"), db);
 
-            Assert.Equal(Count(shipped, "NiNode"), Count(body, "NiNode"));
+            Assert.Equal(Census(shipped), Census(body));
 
             NifItem bodyRoot = body.GetBlock(body.FindItem(body.Footer, "Roots")!.Children[0]);
 
             Assert.Equal(
                 Count(body, "NiNode") - 1,
                 body.GetRefArray(bodyRoot, "Children").Count(c => c.Name == "NiNode"));
-
-            // And nothing of the skeleton's own came with them.
-            Assert.Equal(0, Count(body, "NiStringExtraData"));
 
             Assert.Equal(0, Count(body, "bhkRigidBody"));
             Assert.Equal(0, Count(body, "bhkRagdollConstraint"));

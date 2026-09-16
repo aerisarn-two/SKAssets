@@ -497,8 +497,11 @@ namespace SKAssets.Export
 
             foreach (HavokObject model in borrowed)
             {
-                if (view[model.Id] is { } placed)
-                    Place(placed, world[model.Id]);
+                if (view[model.Id] is not { } placed)
+                    continue;
+
+                Place(placed, world[model.Id]);
+                Strip(placed);
             }
 
             var doomed = new List<HavokObject>();
@@ -557,6 +560,30 @@ namespace SKAssets.Export
             model.Properties.GetString(SourceProperty)
                 .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
                 .Any(s => !s.Equals(source, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Takes the extra data off a bone a mesh has borrowed.</summary>
+        /// <remarks>
+        /// A bone states things about itself that are the skeleton's business and
+        /// no mesh's. The game ships `DraugrMale02.nif` with one extra-data block,
+        /// the inventory marker on its own root; the four `TwistOverride` floats on
+        /// the arm twist bones live in `Skeleton.nif`, and rode into the body with
+        /// the bones the body is skinned to.
+        /// </remarks>
+        private static void Strip(FbxObject model)
+        {
+            string count = model.Properties.GetString(FbxExtraDataWriter.CountProperty);
+
+            if (count.Length == 0)
+                return;
+
+            foreach (FbxProperty70 property in model.Properties.All.ToList())
+            {
+                if (property.Name.StartsWith(FbxExtraDataWriter.Prefix, StringComparison.Ordinal))
+                    model.Properties.Remove(property.Name);
+            }
+
+            model.Properties.Remove(FbxExtraDataWriter.CountProperty);
+        }
 
         /// <summary>Writes a transform onto a node, replacing the one it had.</summary>
         private static void Place(FbxObject model, NifTransform transform)
