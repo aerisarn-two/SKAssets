@@ -5,6 +5,7 @@ using HKFBX.Model;
 using HKSK.Model;
 using LeanMeshIO;
 using NIFBX.Conversion;
+using NIFBX.Fbx;
 using NIFSharp;
 using SKAssets.Export.Fbx;
 using HavokObject = HKFBX.Fbx.FbxObject;
@@ -460,21 +461,44 @@ namespace SKAssets.Export
                     keep.Add(model.Id);
             }
 
-            // And what those nodes hang from, all the way up. A body is skinned to
-            // bones in the middle of a skeleton it does not own the top of, and a
-            // node whose parent has gone is a node nothing can reach: dropping the
-            // ancestors takes the whole tree with them and leaves a mesh bound to
-            // nothing.
-            foreach (HavokObject model in models.Where(m => keep.Contains(m.Id)).ToList())
-            {
-                HavokObject? above = model;
+            // A bone a mesh is skinned to belongs to the skeleton too, and it is kept
+            // here without the skeleton it hangs off. The game's own files say how:
+            // the bones a skinned mesh names sit flat under that mesh's root, each
+            // holding where it stands in the world. `Hair01.nif` ships three nodes --
+            // itself, `NPC Neck` and `NPC Head`, siblings, at z=124.72 and z=134.30 --
+            // and `DraugrMale02.nif` ships its sixty the same way.
+            //
+            // Keeping the chain instead was the obvious reading and the wrong one. A
+            // node whose parent has gone is unreachable, so the ancestors came too,
+            // all the way to the top: hair arrived as nine nodes for its three,
+            // carrying `_`, `NPC Root`, the COM and three spine bones it is not
+            // skinned to, and the skeleton's own `rigPerspective`, `rigVersion` and
+            // `species` rode along on `_`.
+            //
+            // So the bones are flattened rather than the tree kept. Each one is given
+            // the transform that puts it where it was, measured before anything is
+            // removed, and ends up under this file's own root -- which is where the
+            // game puts it, and leaves nothing above it to carry in.
+            var borrowed = new List<HavokObject>();
+            var world = new Dictionary<long, NifTransform>();
+            var view = new FbxScene(copy);
 
-                while (above is not null
-                    && scene.ParentsOf(above.Id).FirstOrDefault(p => p.Class == "Model") is { } parent)
-                {
-                    if (!keep.Add(parent.Id)) break;
-                    above = parent;
-                }
+            foreach (HavokObject model in models)
+            {
+                if (!keep.Contains(model.Id) || !Borrowed(model, source))
+                    continue;
+
+                if (view[model.Id] is not { } placed)
+                    continue;
+
+                borrowed.Add(model);
+                world[model.Id] = FbxGlobalTransform.Of(view, placed);
+            }
+
+            foreach (HavokObject model in borrowed)
+            {
+                if (view[model.Id] is { } placed)
+                    Place(placed, world[model.Id]);
             }
 
             var doomed = new List<HavokObject>();
@@ -516,9 +540,33 @@ namespace SKAssets.Export
                 scene.Remove(o);
 
             scene.Flush();
-            Reroot(copy, source);
+
+            if (Reroot(copy, source) is { } root && borrowed.Count > 0)
+                Reparent(copy, borrowed.Select(b => b.Id).ToHashSet(), root);
 
             return copy;
+        }
+
+        /// <summary>Whether a node is another file's as well as this one's.</summary>
+        /// <remarks>
+        /// Which is what a bone is, in a scene holding a whole creature: the skeleton
+        /// states it and every mesh skinned to it names it. A mesh's own nodes -- its
+        /// root, its shapes -- claim one file and only one.
+        /// </remarks>
+        private static bool Borrowed(HavokObject model, string source) =>
+            model.Properties.GetString(SourceProperty)
+                .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
+                .Any(s => !s.Equals(source, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Writes a transform onto a node, replacing the one it had.</summary>
+        private static void Place(FbxObject model, NifTransform transform)
+        {
+            NifVector3 angles = transform.ToEulerDegrees();
+
+            model.Properties.SetVector3(
+                "Lcl Translation", transform.Translation.X, transform.Translation.Y, transform.Translation.Z);
+            model.Properties.SetVector3("Lcl Rotation", angles.X, angles.Y, angles.Z);
+            model.Properties.SetVector3("Lcl Scaling", transform.Scale, transform.Scale, transform.Scale);
         }
 
         /// <summary>
@@ -553,19 +601,16 @@ namespace SKAssets.Export
         /// needed. The first two stay -- the second reparented under the first -- and
         /// the third is dropped after what hung beneath it is taken over.
         /// </remarks>
-        private static void Reroot(FbxDocument document, string source)
+        private static long? Reroot(FbxDocument document, string source)
         {
             var scene = new HavokScene(document);
             List<HavokObject> tops = scene.RootModels().ToList();
 
-            if (tops.Count < 2)
-                return;
-
             HavokObject? own = tops.FirstOrDefault(
                 m => Claims(m, source) && m.Properties.GetString(NifNodeProperty).Length > 0);
 
-            if (own is null)
-                return;
+            if (own is null || tops.Count < 2)
+                return own?.Id;
 
             var adopted = new List<HavokObject>();
 
@@ -586,10 +631,12 @@ namespace SKAssets.Export
             }
 
             if (adopted.Count == 0)
-                return;
+                return own.Id;
 
             scene.Flush();
             Reparent(document, adopted.Select(a => a.Id).ToHashSet(), own.Id);
+
+            return own.Id;
         }
 
         /// <summary>Moves nodes under a new parent, rather than giving them a second.</summary>
@@ -604,17 +651,30 @@ namespace SKAssets.Export
         ///
         /// So every object-to-object connection into these nodes goes, and exactly one
         /// takes its place.
+        ///
+        /// Every connection to a *node*, that is. A node is the source end of more
+        /// than one kind of edge: a skin cluster names the bone it deforms with the
+        /// same `OO` shape a parent uses, bone first, so sweeping the lot took the
+        /// skin off with the parent. A chicken came back as a shape with no
+        /// `NiSkinInstance`, no partition and no data, which is a mesh that deforms
+        /// with nothing. Only edges whose far end is another node are parenthood.
         /// </remarks>
         private static void Reparent(FbxDocument document, IReadOnlySet<long> movers, long parent)
         {
             if (document["Connections"] is not { } connections)
                 return;
 
+            var nodes = new HavokScene(document).OfClass("Model").Select(m => m.Id).ToHashSet();
+
+            // The scene root, which is what a node Blender left at the top hangs from.
+            nodes.Add(0L);
+
             connections.Nodes.RemoveAll(c =>
                 c.Name == "C"
                 && c.Properties.Count >= 3
                 && (c.Properties[0] as string ?? "OO") == "OO"
-                && movers.Contains(Convert.ToInt64(c.Properties[1], CultureInfo.InvariantCulture)));
+                && movers.Contains(Convert.ToInt64(c.Properties[1], CultureInfo.InvariantCulture))
+                && nodes.Contains(Convert.ToInt64(c.Properties[2], CultureInfo.InvariantCulture)));
 
             foreach (long mover in movers)
             {

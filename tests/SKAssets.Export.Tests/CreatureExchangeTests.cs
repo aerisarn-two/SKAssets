@@ -27,12 +27,12 @@ namespace SKAssets.Export.Tests
     /// </remarks>
     public sealed class CreatureExchangeTests
     {
-        private static string Chicken =>
+        internal static string Chicken =>
             Corpus.ExtractedCreatures().FirstOrDefault(
                 folder => folder.Replace('\\', '/').Contains("/chicken/", StringComparison.OrdinalIgnoreCase))
             ?? Corpus.ExtractedCreatures()[0];
 
-        private static SkyrimCache Cache => SkyrimCache.Load(Corpus.Havok!);
+        internal static SkyrimCache Cache => SkyrimCache.Load(Corpus.Havok!);
 
         [CreatureFact]
         public void ACreatureIsItsSkeletonAndEverythingBesideIt()
@@ -188,9 +188,27 @@ namespace SKAssets.Export.Tests
             Assert.Equal(1, Count(body, "NiSkinInstance"));
             Assert.Equal(1, Count(body, "NiSkinPartition"));
 
-            // Every bone the body had, and none of the skeleton's collision.
-            Assert.True(Count(body, "NiNode") >= Count(NifModel.Load(
-                Path.Combine(Path.GetDirectoryName(assets.Skeleton)!, "chicken.nif"), db), "NiNode"));
+            // The bones the body had, as many as it had and no more, and flat under
+            // its own root the way the game ships them.
+            //
+            // `>=` used to stand here, and it is why this passed while a mesh came
+            // back with the whole skeleton threaded into it: the bones a mesh is
+            // skinned to were kept along with every node above them, so a draugr's
+            // hair arrived as nine nodes for its three and carried the skeleton's
+            // `rigPerspective`, `rigVersion` and `species` in with them.
+            NifModel shipped = NifModel.Load(
+                Path.Combine(Path.GetDirectoryName(assets.Skeleton)!, "chicken.nif"), db);
+
+            Assert.Equal(Count(shipped, "NiNode"), Count(body, "NiNode"));
+
+            NifItem bodyRoot = body.GetBlock(body.FindItem(body.Footer, "Roots")!.Children[0]);
+
+            Assert.Equal(
+                Count(body, "NiNode") - 1,
+                body.GetRefArray(bodyRoot, "Children").Count(c => c.Name == "NiNode"));
+
+            // And nothing of the skeleton's own came with them.
+            Assert.Equal(0, Count(body, "NiStringExtraData"));
 
             Assert.Equal(0, Count(body, "bhkRigidBody"));
             Assert.Equal(0, Count(body, "bhkRagdollConstraint"));
