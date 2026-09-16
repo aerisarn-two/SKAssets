@@ -1057,14 +1057,27 @@ namespace SKAssets.Export
                     queue.Enqueue(child);
             }
 
-            var now = order.ToDictionary(m => m.Id, m => FbxGlobalTransform.Of(view, m));
+            var local = order.ToDictionary(m => m.Id, FbxGlobalTransform.LocalOf);
             var target = new Dictionary<long, NifTransform>();
 
+            // Parents first, so a node not in the table follows a restored parent at
+            // the offset it always had. Keeping where the tool put it instead keeps
+            // the parent's error: a cow's skeleton still came back with bones out by
+            // up to 2.62 units and 4.3 degrees when only the disagreeing ones were
+            // put back, and 0.26 and 2.6 once their children followed them.
             foreach (FbxObject model in order)
             {
-                target[model.Id] = wanted.TryGetValue(NameEncoding.Unsanitize(model.Name), out NifTransform pose)
-                    ? pose
-                    : now[model.Id];
+                if (wanted.TryGetValue(NameEncoding.Unsanitize(model.Name), out NifTransform pose))
+                {
+                    target[model.Id] = pose;
+                    continue;
+                }
+
+                FbxObject? parent = view.ParentsOf(model.Id).FirstOrDefault(p => p.Class == "Model");
+
+                target[model.Id] = parent is not null && target.TryGetValue(parent.Id, out NifTransform above)
+                    ? local[model.Id].ComposedWith(above)
+                    : FbxGlobalTransform.Of(view, model);
             }
 
             foreach (FbxObject model in order.Skip(1))
