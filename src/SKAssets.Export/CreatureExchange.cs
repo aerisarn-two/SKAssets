@@ -555,11 +555,17 @@ namespace SKAssets.Export
 
             foreach (HavokObject o in scene.Objects.ToList())
             {
-                if (o.Class == "AnimationStack"
-                    && ClipExchange.IsClip(
-                        o.Name, o.Properties.GetString(ClipExchange.StoredNameProperty), clips))
+                if (o.Class == "AnimationStack")
                 {
-                    doomed.Add(o);
+                    // A clip is the creature's, not any one file's, and goes back to
+                    // the project rather than into a NIF. Anything else belongs to
+                    // whichever file stated it, and only that file.
+                    bool clip = ClipExchange.IsClip(
+                        o.Name, o.Properties.GetString(ClipExchange.StoredNameProperty), clips);
+
+                    if (clip || !Claims(o, source))
+                        doomed.Add(o);
+
                     continue;
                 }
 
@@ -831,6 +837,15 @@ namespace SKAssets.Export
 
             foreach (FbxObject model in scene.OfClass("Model"))
                 Add(model, name, append);
+
+            // The animation too, which belongs to the file that stated it as much as
+            // any node does. A skeleton that hangs controllers on its bones -- a
+            // deer's 39 `NiTransformController`, a chaurus's 31 -- sends them through
+            // as one stack, and every file split back out of the scene was given it:
+            // `ReinDeer_Skin.nif` came back with 38 transform controllers, 38
+            // interpolators and 38 data blocks it has never had.
+            foreach (FbxObject stack in scene.OfClass("AnimationStack"))
+                Add(stack, name, append);
 
             scene.Flush();
         }
