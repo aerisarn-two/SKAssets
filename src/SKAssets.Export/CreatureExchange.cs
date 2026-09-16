@@ -478,6 +478,17 @@ namespace SKAssets.Export
 
             foreach (HavokObject model in models)
             {
+                // A node the Havok rig has and the mesh does not is the rig's, and
+                // goes back into the rig rather than into a NIF. `BoneUnion` puts
+                // them in so both files can be rebuilt from one scene -- the three
+                // `x_` bones every actor rig declares, the werewolf's five leaked
+                // rigging helpers, the joints `JointBridge` invents for a ragdoll
+                // the mesh has no constraint for -- and marks each one. The mark was
+                // written and never read, so they all landed in the NIF: a
+                // werewolf's skeleton came back with 155 nodes for its 147.
+                if (model.Properties.GetString(BoneOrigin.Property) == BoneOrigin.Havok)
+                    continue;
+
                 string[] belongs = model.Properties.GetString(SourceProperty)
                     .Split(Separator, StringSplitOptions.RemoveEmptyEntries);
 
