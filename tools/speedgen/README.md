@@ -53,12 +53,14 @@ Against the shipped file (HKSK's `SpeedDataRebuildTests`):
 | shipped blocks written                                | 76 of 86                 |
 | shipped blocks the engine never asks for              | 10 (8 projects with no sampler, 2 keys no graph writes) |
 | blocks the game does not ship                         | 52                       |
-| shipped points within 2%, read as the game reads them | 13,931 of 16,930 (82.3%) |
-| size                                                  | 521 KB                   |
+| shipped points within 2%, read as the game reads them | 14,215 of 16,930 (84.0%) |
+| size                                                  | 523 KB                   |
 
 Three choices cost against the shipped file and are kept because the engine is the
 measure: the curve is read at the goal speed itself, where the shipped sweeps read it
 0.0404 early; every heading is swept from zero, where the shipped sweeps settle in
 from 0.5; and the sweep reaches the whole ladder and twice the fastest speed the
 movement type names, where the shipped ones stop at 324.5 on 74 of 86 blocks and hand
-faster requests back unchanged.
+faster requests back unchanged. It never stops short of 324.5 either: a slow creature's
+doubled speed falls below it, and the shipped table answers what the creature can reach
+up to there.

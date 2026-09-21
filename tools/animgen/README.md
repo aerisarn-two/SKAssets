@@ -33,7 +33,7 @@ Run over the extracted game and its five masters:
 | ------------------- | ------------------------------------------ | ---------------------------------- |
 | animation data      | byte-identical, 429 of 429 entries          | byte-identical                     |
 | set data            | 6 of 49 entries identical; 98.9% of the shipped files listed, 307 of 320 attacks, the moving flag agreeing on 294 | 48 of 49 entries identical; the wolf keeps 72 of 78 files and all 7 attacks, and names one more |
-| speed data          | 41 projects against 49, 128 keys against 88, 76 in common; 82.3% of the shipped points within 2% as the game reads them | 48 of 49 blocks identical; the wolf's reads within 2% at all 323 shipped points |
+| speed data          | 41 projects against 49, 128 keys against 88, 76 in common; 84.0% of the shipped points within 2% as the game reads them | 48 of 49 blocks identical; the wolf's reads within 2% at all 323 shipped points |
 
 The set data and the speed table are built for what the engine reads, not to reproduce
 the shipped ones, so they differ by design: `setgen` and `speedgen` say where and why.
@@ -41,7 +41,8 @@ The horse's and the werewolf's caches number their clips against another charact
 list -- the horse's up to 88 against the 51 its character lists, the werewolf's at
 another animation's slot for every clip -- and their speed curves hold 289 of 289 and
 217 of 230 of their shipped points only because HKSK reads a clip's motion at the
-cache's own number there; read through the character's list, they held 0 and 26. The
-projects below half are the riekling (134 of 1,037), the benthic
-lurker (21 of 253), the first person (39 of 209), the daedra (23 of 77) and the horker
-(39 of 119).
+cache's own number there; read through the character's list, they held 0 and 26. Three
+projects are below half, each for a reason HKSK's `docs/speed-data-research.md` records:
+the riekling (134 of 1,037), whose shipped sideways records are not even symmetric; the
+benthic lurker (21 of 253), whose first block answers every heading with its forward
+ladder; and the first person (39 of 209), a camera rather than a body.
