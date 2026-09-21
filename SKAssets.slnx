@@ -5,6 +5,7 @@
     <Project Path="src/SKAssets.Export/SKAssets.Export.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/animgen/animgen.csproj" />
     <Project Path="tools/setgen/setgen.csproj" />
     <Project Path="tools/speedgen/speedgen.csproj" />
   </Folder>
