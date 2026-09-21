@@ -40,6 +40,10 @@ namespace SKAssets.Content.Havok
     /// </remarks>
     public static class GameRecordReader
     {
+        /// <summary>The game's masters, in load order.</summary>
+        public static IReadOnlyList<string> Masters { get; } =
+            ["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"];
+
         /// <summary>The records of plugins already open, in load order.</summary>
         public static GameRecords Read(IEnumerable<ISkyrimModGetter> loadOrder)
         {

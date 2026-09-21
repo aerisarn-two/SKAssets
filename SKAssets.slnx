@@ -4,6 +4,10 @@
     <Project Path="src/SKAssets.Content/SKAssets.Content.csproj" />
     <Project Path="src/SKAssets.Export/SKAssets.Export.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/setgen/setgen.csproj" />
+    <Project Path="tools/speedgen/speedgen.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SKAssets.Tests/SKAssets.Tests.csproj" />
     <Project Path="tests/SKAssets.Content.Tests/SKAssets.Content.Tests.csproj" />

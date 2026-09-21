@@ -237,6 +237,9 @@ CacheGeneration.Amend(cache, "MyCreatureProject", records);   // all three files
 cache.Save();
 ```
 
+`tools/setgen` and `tools/speedgen` do it from the command line for the set data and
+the speed table, reading the masters and any `--plugin` after them.
+
 It reads and does not decide. Which idles equip, which attacks the idle tree only
 chooses on the move and which projects are actors are the engine's rules, and HKSK
 applies them. Read from the five masters, the records give HKSK exactly what its own
@@ -426,6 +429,11 @@ reason for the split: it carries NIFBX, HKFBX and HKSK together.
 - `CreatureExchange` — all of the above for one creature, from its folder, and
   back apart into the files it came from.
 - `AssetRecognition` — what a path is, by opening it rather than by its name.
+
+`tools/` — two command lines over `SKAssets.Content` and HKSK, which write
+`animationsetdatasinglefile.txt` (`setgen`) and `speeddatasinglefile.txt`
+(`speedgen`) from a meshes folder and a load order. They live here rather than in
+HKSK because they need the plugins, which HKSK does not open.
 
 ## Licence
 
