@@ -41,7 +41,7 @@ and its expressions -- because that value is what the engine reads back to choos
 movement type and what the sampler keys the table on. Six such keys get no block on
 purpose: driven into their state, nothing sampler-fed is live beside them and the
 pose carries no root motion -- the rider's mounted states, the first-person camera
--- or the cache lacks the clip's motion, the horse's sprint; an absent block is the
+-- or the clip records no travel, the horse's swim; an absent block is the
 game's own answer, the request unchanged. For the other tagged keys -- the attacks,
 the perk stances, the sprints, the falls -- the graph is driven into the state and
 the ladder live beside it, or the flat pose it plays, is read.
@@ -53,8 +53,8 @@ Against the shipped file (HKSK's `SpeedDataRebuildTests`):
 | shipped blocks written                                | 76 of 86                 |
 | shipped blocks the engine never asks for              | 10 (8 projects with no sampler, 2 keys no graph writes) |
 | blocks the game does not ship                         | 52                       |
-| shipped points within 2%, read as the game reads them | 13,451 of 16,930 (79.5%) |
-| size                                                  | 524 KB                   |
+| shipped points within 2%, read as the game reads them | 13,751 of 16,930 (81.2%) |
+| size                                                  | 520 KB                   |
 
 Three choices cost against the shipped file and are kept because the engine is the
 measure: the curve is read at the goal speed itself, where the shipped sweeps read it
