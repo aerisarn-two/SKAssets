@@ -219,6 +219,30 @@ each record type names, how an actor and a prop are assembled across files, and
 the traps — the stale split animation cache, the two skeletons inside every
 `skeleton.hkx`, and the `x_` bones that belong to Havok and to no mesh.
 
+### Writing the animation caches for a load order
+
+HKSK writes the three text caches beside the meshes --
+`animationdatasinglefile.txt`, `animationsetdatasinglefile.txt` and
+`speeddatasinglefile.txt` -- and three of their inputs are plugin records: the
+movement types, the races that wear each project and send its attacks, and the idle
+tree. HKSK does not open plugins; it states what it needs as `IGameRecords`, and
+`GameRecordReader` reads that from a load order, in memory, the later plugin's
+record winning:
+
+```csharp
+GameRecords records = GameRecordReader.Read(["Skyrim.esm", "Update.esm", ..., "MyCreature.esp"]);
+
+SkyrimCache cache = SkyrimCache.Load(meshesFolder);
+CacheGeneration.Amend(cache, "MyCreatureProject", records);   // all three files
+cache.Save();
+```
+
+It reads and does not decide. Which idles equip, which attacks the idle tree only
+chooses on the move and which projects are actors are the engine's rules, and HKSK
+applies them. Read from the five masters, the records give HKSK exactly what its own
+measurements of them did: 107 movement types, 1,246 idle events, 437 attack events
+over 48 graphs, and 48 projects a race wears.
+
 ## One FBX for a creature: SKAssets.Export
 
 An actor's skeleton is stored twice and neither copy is complete.
@@ -382,7 +406,8 @@ a plugin names should not be made to carry a NIF reader and a Havok library.
 - `Nif/` — the census of a mesh, and the role read off it.
 - `Assets/` — what a record requires of the mesh it names, and the two checks
   that take a second file.
-- `Havok/` — the animation cache indexed by what a mesh can name.
+- `Havok/` — the animation cache indexed by what a mesh can name, and the
+  records HKSK needs to write the caches, read from a load order.
 
 `src/SKAssets.Export` — the files as one scene. The heaviest of the three and the
 reason for the split: it carries NIFBX, HKFBX and HKSK together.
