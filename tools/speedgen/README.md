@@ -53,8 +53,8 @@ Against the shipped file (HKSK's `SpeedDataRebuildTests`):
 | shipped blocks written                                | 76 of 86                 |
 | shipped blocks the engine never asks for              | 10 (8 projects with no sampler, 2 keys no graph writes) |
 | blocks the game does not ship                         | 52                       |
-| shipped points within 2%, read as the game reads them | 13,751 of 16,930 (81.2%) |
-| size                                                  | 520 KB                   |
+| shipped points within 2%, read as the game reads them | 13,931 of 16,930 (82.3%) |
+| size                                                  | 521 KB                   |
 
 Three choices cost against the shipped file and are kept because the engine is the
 measure: the curve is read at the goal speed itself, where the shipped sweeps read it
