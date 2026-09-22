@@ -1,4 +1,5 @@
 using HKFBX.Hkx;
+using HKFBX.Model;
 using HKSK.Cache;
 using HKSK.Havok;
 using HKSK.Model;
@@ -40,6 +41,13 @@ namespace SKAssets.Authoring
         /// <c>SKAssets.Export</c> writes one. Without it the creature keeps the template's.
         /// </summary>
         public string? Skeleton { get; init; }
+
+        /// <summary>
+        /// The template's bones by the names they have in <see cref="Skeleton"/>, for those not
+        /// called the same: <c>Sabrecat_Head [Head]</c> to <c>head</c>. Read only when the
+        /// skeleton is a rig of its own, to rebind the bones the behaviour names by index.
+        /// </summary>
+        public IReadOnlyDictionary<string, string>? BoneMap { get; init; }
 
         /// <summary>FBX meshes for the body the creature's skin wears. Without them, the template's.</summary>
         public IReadOnlyDictionary<ModelSlot, string>? Body { get; init; }
@@ -219,6 +227,7 @@ namespace SKAssets.Authoring
             // The skeleton mesh sits beside the rig; the race names it, from Meshes, in the
             // record's own case, which the disc need not share.
             string? newSkeletonModel = null;
+            bool rigReplaced = false;
             if (race.SkeletalModel?.Male?.File.GivenPath is { } skeletonModel)
             {
                 string fromMeshes = skeletonModel.Replace('\\', '/');
@@ -254,7 +263,28 @@ namespace SKAssets.Authoring
                 if (character is not null && !string.IsNullOrEmpty(character.RigName))
                 {
                     string rig = Path.Combine(target, character.RigName.Replace('\\', Path.DirectorySeparatorChar));
-                    HkxSkeletonFile.Write(rig, SkeletonExchange.ImportHavok(document), rig);
+                    SkeletonFile imported = SkeletonExchange.ImportHavok(document);
+                    SkeletonFile template = HkxSkeletonFile.Read(rig);
+
+                    if (SameStructure(template, imported))
+                        HkxSkeletonFile.Write(rig, imported, rig);
+                    else
+                    {
+                        // A rig of its own: the file is rebuilt around it, and every bone the
+                        // copied character and behaviours name by index is found again by name.
+                        HkxSkeletonBuilder.Write(rig, imported, rig);
+
+                        var copied = entry.Block.Files
+                            .Where(f => !f.Replace('/', '\\').StartsWith(@"..\", StringComparison.Ordinal))
+                            .Select(f => HavokPath.Resolve(target, f)).OfType<string>()
+                            .Where(f => !string.Equals(Path.GetFullPath(f), Path.GetFullPath(rig), StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                        RigRemap.Report remapped = RigRemap.Apply(copied, template.Rig, imported.Rig, template.Ragdoll, imported.Ragdoll, request.BoneMap);
+                        notes.Add($"a rig of its own: {template.Rig.Count} bones became {imported.Rig.Count}, "
+                            + $"{template.Bodies.Count} bodies {imported.Bodies.Count}; {remapped.Files.Count} files rebound by bone name");
+                        notes.AddRange(remapped.Notes);
+                        rigReplaced = true;
+                    }
                 }
             }
 
@@ -360,6 +390,16 @@ namespace SKAssets.Authoring
             {
                 var bptd = Plugin.BodyParts.DuplicateInAsNewRecord<BodyPartData, IBodyPartDataGetter>(parts, id + "BodyPartData");
                 bptd.Model = new Model { File = newSkeletonModel };
+
+                // A part names skeleton nodes -- the torso Sabrecat_[pelv], VATS aiming at
+                // Sabrecat_Head [Head] -- which a rig of its own calls something else.
+                if (request.BoneMap is { Count: > 0 } map)
+                    foreach (var part in bptd.Parts)
+                    {
+                        if (map.TryGetValue(part.PartNode, out string? node)) part.PartNode = node;
+                        if (map.TryGetValue(part.VatsTarget, out string? vats)) part.VatsTarget = vats;
+                    }
+
                 copy.BodyPartData.SetTo(bptd);
                 records.Add(new AuthoredRecord(bptd.FormKey, nameof(BodyPartData), bptd.EditorID!, parts.FormKey));
             }
@@ -407,6 +447,16 @@ namespace SKAssets.Authoring
 
                 if (actor.CharacterModified) actor.SaveCharacter();
                 clips = new ImportReport(imported, ignored, failed);
+
+                // An animation the clips did not replace is still the template's, bound to a rig
+                // the creature no longer has.
+                if (rigReplaced)
+                {
+                    var replaced = imported.Select(c => c.StoredName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var stale = actor.Animations.Where(a => !replaced.Contains(a.StoredName)).Select(a => a.StoredName).ToList();
+                    if (stale.Count > 0)
+                        notes.Add($"{stale.Count} of the template's animations were not replaced and are bound to its rig: {string.Join(", ", stale)}");
+                }
             }
 
             var gameRecords = GameRecordReader.Read([.. _cache.ListedOrder.OfType<ISkyrimModGetter>(), Plugin]);
@@ -416,6 +466,15 @@ namespace SKAssets.Authoring
 
             return new CreatureResult(records[0], records, project, [.. files.Distinct()], amended, clips, findings, notes);
         }
+
+        /// <summary>
+        /// Whether a skeleton has the template's structure -- the same bones in the same order and
+        /// the same bodies -- so that editing the template by name writes all of it.
+        /// </summary>
+        private static bool SameStructure(SkeletonFile template, SkeletonFile imported) =>
+            template.Rig.Bones.Select(b => b.Name).SequenceEqual(imported.Rig.Bones.Select(b => b.Name), StringComparer.OrdinalIgnoreCase)
+            && template.Bodies.Select(b => b.Name).Order(StringComparer.OrdinalIgnoreCase)
+                .SequenceEqual(imported.Bodies.Select(b => b.Name).Order(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Gives a creature's body sounds of its own: its footstep set copied, and for each event
