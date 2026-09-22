@@ -12,7 +12,8 @@ public sealed class ZzReferenceSkeleton
     [HavokCorpusFact]
     public void Export()
     {
-        string meshes = Environment.GetEnvironmentVariable("SKASSETS_HAVOK_MESHES")!;
+        string meshes = Environment.GetEnvironmentVariable("SKASSETS_HAVOK_MESHES") ?? "";
+        if (meshes.Length == 0 || !Directory.Exists(meshes)) return;
         string outDir = Environment.GetEnvironmentVariable("HKSK_CENSUS_OUT") ?? Path.GetTempPath();
         var schema = NifXmlDatabase.LoadEmbedded();
         foreach (var (name, folder) in new[] { ("sabrecat", "actors/sabrecat/character assets"), ("skeever", "actors/skeever/character assets") })

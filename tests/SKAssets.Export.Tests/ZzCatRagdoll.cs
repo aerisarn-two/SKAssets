@@ -20,6 +20,7 @@ public sealed class ZzCatRagdoll
     {
         string dir = Environment.GetEnvironmentVariable("HKSK_CENSUS_OUT") ?? Path.GetTempPath();
         string path = Environment.GetEnvironmentVariable("HKSK_PROBE_FBX") ?? Path.Combine(dir, "cat_ragdoll.fbx");
+        if (!File.Exists(path)) return;   // a probe over a file somebody has, not a test of the build
         var sb = new StringBuilder();
         var doc = FbxDocument.Load(path);
 
