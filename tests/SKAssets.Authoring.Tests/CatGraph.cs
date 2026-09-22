@@ -111,7 +111,7 @@ internal sealed class CatGraph
         HavokFile q = Load(folder, "QuadrupedBehavior.hkx");
         HavokFile f = Load(folder, "ForwardLocomotion.hkx");
         HavokFile n = Load(folder, "NonCombatIdle.hkx");
-        HavokFile r = Load(folder, "SabreCatBehavior.hkx");
+        HavokFile r = Load(folder, ZzCatCreature.Name + "Behavior.hkx");
 
         Locomotion(new GraphEditor(f), new GraphEditor(q));
         Quadruped(new GraphEditor(q));

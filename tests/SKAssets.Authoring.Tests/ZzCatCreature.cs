@@ -127,7 +127,14 @@ public sealed class ZzCatCreature
                 .Select(f => (ISkyrimModGetter)SkyrimMod.CreateFromBinaryOverlay(f, SkyrimRelease.SkyrimSE)).ToList();
             var cache = masters.ToImmutableLinkCache();
             var plugin = authoring.Plugin;
-            IdleAnimation Copied(string editorId) => plugin.IdleAnimations.First(i => i.EditorID == Name + editorId);
+            // A copy is renamed after the cat, and how depends on how the sabre cat spelled
+            // itself in the name it had, so the copies are looked up by what they were copied
+            // from rather than by guessing what they ended up called.
+            IdleAnimation Copied(string editorId)
+            {
+                FormKey was = cache.Resolve<IIdleAnimationGetter>(editorId).FormKey;
+                return plugin.IdleAnimations[made.Records.First(r => r.CopiedFrom == was).FormKey];
+            }
 
             Copied("SabreCatDeath").AnimationEvent = "DeathAnimation";
             var behavior = Copied("SabreCatDeath").Filename!.GivenPath;
@@ -155,7 +162,11 @@ public sealed class ZzCatCreature
             var race = plugin.Races.Single();
             race.Size = Size.Small;
             race.BaseMass = 0.5f;
-            race.UnarmedReach = 40f;
+            // Reach is how close the combat AI has to get before it will swing, measured between
+            // centres, and the two collision capsules keep it from closing much under 60 units.
+            // 64 is what every small thing in the game that attacks uses -- skeever, wolf, fox --
+            // and the sabre cat's 85 is a reach its size earns; below 64 the cat circles forever.
+            race.UnarmedReach = 64f;
             race.UnarmedDamage = 4f;
             report.AppendLine($"race {race.EditorID}: small, mass 0.5, reach 40, unarmed damage 4; idles {plugin.IdleAnimations.Count}");
 
