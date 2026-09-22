@@ -195,6 +195,31 @@ namespace SKAssets.Authoring
             string project = id + "Project";
             string target = Path.Combine(meshes, folder);
 
+            // The template's files carry its name -- SabreCat.hkx, SabreCatBehavior.hkx -- and a
+            // copy that keeps them reads as the sabre cat's everywhere a path is shown: the race's
+            // graph, the Creation Kit's idle list, the cache. They are renamed after the new
+            // creature, and the two places one file names another are rewritten below.
+            var named = new[] { Path.GetFileName(relativeFolder.TrimEnd('/', '\\')), race.EditorID?.Replace("Race", "") ?? "" }
+                .Where(n => n.Length > 2).Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(n => n.Length).ToList();
+
+            string Renamed(string stored)
+            {
+                // A path out of the folder is another creature's file, shared, not copied.
+                if (stored.Replace('/', '\\').StartsWith(@"..\", StringComparison.Ordinal)) return stored;
+                // Only the file's own name, and the folders are the game's own separator, which
+                // is not this platform's: the paths are split here rather than by Path.
+                int slash = stored.LastIndexOfAny(['\\', '/']);
+                string name = stored[(slash + 1)..];
+                foreach (string spelling in named)
+                {
+                    int at = name.IndexOf(spelling, StringComparison.OrdinalIgnoreCase);
+                    if (at < 0) continue;
+                    return stored[..(slash + 1)] + name[..at] + id + name[(at + spelling.Length)..];
+                }
+
+                return stored;
+            }
+
             void Copy(string from, string relative)
             {
                 string to = Path.Combine(target, relative.Replace('\\', Path.DirectorySeparatorChar));
@@ -209,7 +234,30 @@ namespace SKAssets.Authoring
             {
                 if (stored.Replace('/', '\\').StartsWith(@"..\", StringComparison.Ordinal)) continue;
                 if (HavokPath.Resolve(sourceFolder, stored) is not { } path) { notes.Add($"'{stored}' is not under {sourceFolder} and was not copied"); continue; }
-                Copy(path, stored);
+                Copy(path, Renamed(stored));
+            }
+
+            // Everything downstream -- the rig rebind, the state constants, the cache block --
+            // reads the project's file list, and the list is now the copies' names.
+            var storedFiles = entry.Block.Files.Select(Renamed).ToList();
+
+            // The project names its character file and the character its behaviour, both by the
+            // names they had. Rewritten in the copies, which are the files the game will read.
+            if (named.Count > 0)
+            {
+                ProjectFile copiedProject = ProjectFile.Load(Path.Combine(target, project + ".hkx"));
+                for (int i = 0; i < copiedProject.CharacterFiles.Count; i++)
+                    copiedProject.CharacterFiles[i] = Renamed(copiedProject.CharacterFiles[i]);
+                copiedProject.File.Save(copiedProject.File.Path);
+
+                foreach (string named_ in copiedProject.CharacterFiles)
+                {
+                    if (HavokPath.Resolve(target, named_) is not { } path) continue;
+                    CharacterFile copiedCharacter = CharacterFile.Load(path);
+                    if (copiedCharacter.Data.m_stringData is not { } strings) continue;
+                    strings.m_behaviorFilename = Renamed(strings.m_behaviorFilename);
+                    copiedCharacter.File!.Save(path);
+                }
             }
 
             CharacterFile? character = ProjectFile.Load(projectFile).CharacterFiles
@@ -279,7 +327,7 @@ namespace SKAssets.Authoring
                         // copied character and behaviours name by index is found again by name.
                         HkxSkeletonBuilder.Write(rig, imported, rig);
 
-                        var copied = entry.Block.Files
+                        var copied = storedFiles
                             .Where(f => !f.Replace('/', '\\').StartsWith(@"..\", StringComparison.Ordinal))
                             .Select(f => HavokPath.Resolve(target, f)).OfType<string>()
                             .Where(f => !string.Equals(Path.GetFullPath(f), Path.GetFullPath(rig), StringComparison.OrdinalIgnoreCase))
@@ -311,7 +359,7 @@ namespace SKAssets.Authoring
                     ? HKSK.Behavior.StateConstants.Of(walk, root).Keys.Select(k => k["iState_".Length..]).Where(byName.ContainsKey).ToList()
                     : [];
 
-                var renamed = RenameStateConstants(target, entry.Block.Files, own, id);
+                var renamed = RenameStateConstants(target, storedFiles, own, id);
                 foreach ((string old, string renamedTo) in renamed)
                 {
                     var made = Plugin.MovementTypes.DuplicateInAsNewRecord<MovementType, IMovementTypeGetter>(byName[old], renamedTo);
@@ -351,10 +399,30 @@ namespace SKAssets.Authoring
                 Armor dressed;
                 if (request.Body is { Count: > 0 } body)
                 {
+                    // The addons of the template's own race, and no others. A skin's addons are
+                    // one per race it dresses -- the sabre cat's two are the sabre cat's body
+                    // and the snowy sabre cat's -- and re-racing all of them to the new race
+                    // leaves two addons covering one slot for one race at the same priority,
+                    // which the Creation Kit reports and the game resolves by picking one.
+                    var variants = AddonsOf(skin.FormKey.ToString());
+                    var mine = variants
+                        .Where(a => a.Races.Contains(race.EditorID ?? "", StringComparer.OrdinalIgnoreCase))
+                        .ToList();
+                    if (mine.Count == 0) mine = [.. variants.Take(1)];
+
+                    var only = mine.Count > 0
+                        ? mine.ToDictionary(a => a.EditorId, _ => (IReadOnlyDictionary<ModelSlot, string>)body)
+                        : null;
+
+                    if (variants.Count > mine.Count)
+                        notes.Add($"the template's skin has {variants.Count} addons, one per race it dresses; "
+                            + $"{string.Join(", ", mine.Select(a => a.EditorId))} dresses '{race.EditorID}' and the rest are left out");
+
                     ImportResult worn = Import(new AssetImport
                     {
                         Kind = AuthoredKind.Armor, Template = skin.FormKey.ToString(), EditorId = id + "Skin", Prefix = "",
                         Fbx = body, MeshFolder = folder.Replace('/', '\\'), Recipes = false,
+                        Addons = only, DropUnlistedAddons = variants.Count > mine.Count,
                     });
                     records.AddRange(worn.Records);
                     files.AddRange(worn.Meshes.Concat(worn.Textures));
@@ -436,7 +504,7 @@ namespace SKAssets.Authoring
 
             // ------------------------------------------------ idle records
 
-            CopyIdles(relativeFolder, folder, race, copy, id, records, notes);
+            CopyIdles(relativeFolder, folder, race, copy, id, Renamed, records, notes);
 
             if (request.Npc is not null)
             {
@@ -458,12 +526,16 @@ namespace SKAssets.Authoring
 
             SkyrimCache caches = Caches(request.SourceMeshes, meshes, files);
             if (caches.AnimationData.Project(project) is null)
+            {
+                HKSK.Cache.ProjectBlock block = entry.Block.Clone();
+                block.Files = [.. storedFiles];
                 caches.AnimationData.Projects.Add(new AnimationDataProject
                 {
                     Name = project + ".txt",
-                    Block = entry.Block.Clone(),
+                    Block = block,
                     Movements = entry.Movements?.Clone() ?? new ProjectDataBlock(),
                 });
+            }
 
             // The cache finds a project's files through an index it builds once; read afresh, it
             // sees the files just copied.
@@ -531,7 +603,7 @@ namespace SKAssets.Authoring
         /// </para>
         /// </remarks>
         private void CopyIdles(string templateFolder, string newFolder, IRaceGetter templateRace, Race newRace, string id,
-            List<AuthoredRecord> records, List<string> notes)
+            Func<string, string> renamed, List<AuthoredRecord> records, List<string> notes)
         {
             static string Normal(string path)
             {
@@ -561,17 +633,116 @@ namespace SKAssets.Authoring
 
             var originals = _cache.PriorityOrder.WinningOverrides<IIdleAnimationGetter>().Where(Serves).ToList();
 
+            // The file an idle plays under: its own, or the nearest ancestor that names one.
+            string? FileOf(IIdleAnimationGetter idle)
+            {
+                var seen = new HashSet<FormKey>();
+                for (IIdleAnimationGetter? at = idle; at is not null && seen.Add(at.FormKey);)
+                {
+                    if (Names(at)) return at.Filename!.GivenPath;
+                    at = at.RelatedIdles.Count > 0 && _cache.TryResolve<IIdleAnimationGetter>(at.RelatedIdles[0].FormKey, out var up) ? up : null;
+                }
+                return null;
+            }
+
+            // A record in the template's tree that names another creature's behaviour. The masters
+            // have a few, and one of them matters here: SabreCatNoSpeed, the parent of every turn
+            // in place the sabre cat has, names the skeever's file. The rule above passes it over
+            // as another creature's, which would leave the copies below pointing back into the
+            // template's tree; it is taken along instead and given the file its branch plays under.
+            var misfiled = new Dictionary<FormKey, string>();
+            var reached = originals.ToDictionary(i => i.FormKey);
+            var pending = new Queue<IIdleAnimationGetter>(originals);
+            while (pending.Count > 0)
+            {
+                foreach (IFormLinkGetter<IIdleRelationGetter> link in pending.Dequeue().RelatedIdles)
+                {
+                    if (link.IsNull || reached.ContainsKey(link.FormKey)) continue;
+                    if (!_cache.TryResolve<IIdleAnimationGetter>(link.FormKey, out var other)) continue;
+                    // No file of its own is a case Serves already judged, by the parent chain.
+                    if (other.Filename?.GivenPath is not { Length: > 0 } || Names(other)) continue;
+
+                    var up = new HashSet<FormKey>();
+                    IIdleAnimationGetter? at = other;
+                    while (at is not null && up.Add(at.FormKey) && !reached.ContainsKey(at.FormKey))
+                        at = at.RelatedIdles.Count > 0 && _cache.TryResolve<IIdleAnimationGetter>(at.RelatedIdles[0].FormKey, out var parent) ? parent : null;
+                    if (at is null || !reached.ContainsKey(at.FormKey) || FileOf(at) is not { } file) continue;
+
+                    misfiled[other.FormKey] = file;
+                    reached.Add(other.FormKey, other);
+                    originals.Add(other);
+                    pending.Enqueue(other);
+                }
+            }
+            foreach ((FormKey key, string file) in misfiled)
+                notes.Add($"idle {reached[key].EditorID} names '{reached[key].Filename!.GivenPath}', which is not the template's; the copy plays under '{file}'");
+
+            // What the template calls itself, so a copy can be named after the new creature
+            // rather than prefixed: SabreCatDeath becomes HouseCatDeath. Its records rarely spell
+            // it out -- the sabre cat's idles are SCatRecoil, ScatReset, CatIdleWarn -- so the
+            // short forms are taken along, or a copy reads HouseCatSCatRecoil. se-cmd's retarget
+            // keeps a table of those spellings by hand; here they are made from the name: the
+            // whole of it, its last word, and the leading words' initials before that word.
+            static IEnumerable<string> Forms(string name)
+            {
+                var words = System.Text.RegularExpressions.Regex.Matches(name, "[A-Z][a-z0-9]*|[a-z0-9]+")
+                    .Select(m => m.Value).Where(w => w.Length > 0).ToList();
+                yield return name;
+                if (words.Count < 2) yield break;
+                yield return string.Concat(words[..^1].Select(w => w[0])) + words[^1];
+                yield return words[^1];
+            }
+
+            var spellings = new[] { Path.GetFileName(templateFolder.TrimEnd('/', '\\')), templateRace.EditorID?.Replace("Race", "") ?? "" }
+                .Where(n => n.Length > 2).SelectMany(Forms).Where(n => n.Length > 2)
+                .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(n => n.Length).ToList();
+            var taken = new HashSet<string>(
+                _cache.PriorityOrder.WinningOverrides<IIdleAnimationGetter>().Select(i => i.EditorID ?? ""),
+                StringComparer.OrdinalIgnoreCase);
+
+            string Rename(string editorId)
+            {
+                foreach (string spelling in spellings)
+                {
+                    // A short form is a word of the name and matches where a name would stand,
+                    // at the front: 'Cat' inside 'Duplicate' is not the creature.
+                    int at = editorId.IndexOf(spelling, StringComparison.OrdinalIgnoreCase);
+                    if (at < 0 || (at > 0 && spelling.Length < 5)) continue;
+                    string renamed = editorId[..at] + id + editorId[(at + spelling.Length)..];
+                    if (taken.Add(renamed)) return renamed;
+                }
+
+                // The masters misspell a creature's name in an editor id now and then, and the
+                // sabre cat's swim idle is SabreCastStartSwimming. A name off by one letter is
+                // still the name when what follows it starts a word of its own.
+                foreach (string spelling in spellings)
+                    for (int length = spelling.Length + 1; length >= spelling.Length - 1; length--)
+                    {
+                        if (length < 3 || length > editorId.Length) continue;
+                        string rest = editorId[length..];
+                        if (rest.Length > 0 && !char.IsUpper(rest[0])) continue;
+                        if (!OneApart(editorId[..length], spelling)) continue;
+                        string near = id + rest;
+                        if (taken.Add(near)) return near;
+                    }
+
+                string prefixed = id + editorId;
+                for (int n = 2; !taken.Add(prefixed); n++) prefixed = id + editorId + n;
+                return prefixed;
+            }
+
             var copies = new Dictionary<FormKey, IdleAnimation>();
             foreach (IIdleAnimationGetter idle in originals)
             {
-                string editorId = id + (idle.EditorID ?? idle.FormKey.ID.ToString("X6"));
+                string editorId = Rename(idle.EditorID ?? idle.FormKey.ID.ToString("X6"));
                 IdleAnimation made = Plugin.IdleAnimations.DuplicateInAsNewRecord<IdleAnimation, IIdleAnimationGetter>(idle, editorId);
 
-                if (Names(idle))
+                if (Names(idle) || misfiled.ContainsKey(idle.FormKey))
                 {
-                    string given = idle.Filename!.GivenPath;
+                    string given = misfiled.TryGetValue(idle.FormKey, out string? corrected) ? corrected : idle.Filename!.GivenPath;
                     char separator = given.Contains('/') ? '/' : '\\';
-                    string rest = Normal(given)[from.Length..];
+                    // The file it names was copied under the new creature's name too.
+                    string rest = renamed(Normal(given)[from.Length..]);
                     made.Filename = new Mutagen.Bethesda.Plugins.Assets.AssetLink<Mutagen.Bethesda.Skyrim.Assets.SkyrimBehaviorAssetType>(
                         ("Meshes\\" + to + rest).Replace('\\', separator));
                 }
@@ -590,6 +761,23 @@ namespace SKAssets.Authoring
                         made.RelatedIdles[i] = linked.ToLink<IIdleRelationGetter>();
 
             notes.Add($"{copies.Count} idle records copied onto the new behaviour");
+        }
+
+        /// <summary>Whether two names differ by at most one letter inserted, dropped or changed.</summary>
+        private static bool OneApart(string a, string b)
+        {
+            if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) return true;
+            if (Math.Abs(a.Length - b.Length) > 1) return false;
+            if (a.Length < b.Length) (a, b) = (b, a);
+
+            for (int i = 0, j = 0, spent = 0; i < a.Length;)
+            {
+                if (j < b.Length && char.ToUpperInvariant(a[i]) == char.ToUpperInvariant(b[j])) { i++; j++; continue; }
+                if (++spent > 1) return false;
+                if (a.Length == b.Length) { i++; j++; } else i++;
+            }
+
+            return true;
         }
 
         /// <summary>
