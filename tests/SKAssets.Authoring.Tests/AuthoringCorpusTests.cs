@@ -71,6 +71,11 @@ namespace SKAssets.Authoring.Tests
                 foreach (string mesh in weapon.Meshes.Concat(armour.Meshes))
                     Assert.NotNull(NifModel.Load(Path.Combine(_out, mesh), schema));
 
+                // Into the world: on the Bannered Mare's floor, and outside on Tamriel's grid.
+                authoring.Place(weapon.Record.FormKey, "WhiterunBanneredMare", new Placement(new Noggog.P3Float(0, 0, 0)));
+                authoring.PlaceInWorldspace(weapon.Record.FormKey, "Tamriel", new Placement(new Noggog.P3Float(20000, -10000, 0)));
+                authoring.AddToLeveledList(weapon.Record.FormKey, "LItemWeaponSword");
+
                 authoring.Save();
             }
 
@@ -78,6 +83,8 @@ namespace SKAssets.Authoring.Tests
             Assert.Contains(written.ModHeader.MasterReferences, m => m.Master.FileName == "Skyrim.esm");
             Assert.Equal("MyMod_Sword", Assert.Single(written.Weapons).EditorID);
             Assert.Equal("MyMod_CuirassAA", Assert.Single(written.ArmorAddons).EditorID);
+            Assert.Equal(2, written.EnumerateMajorRecords<IPlacedObjectGetter>().Count());
+            Assert.Equal("Tamriel", Assert.Single(written.Worldspaces).EditorID);
         }
 
         /// <summary>A mesh out of the game's archives, converted to FBX in a folder of its own.</summary>

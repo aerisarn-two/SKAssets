@@ -126,7 +126,28 @@ texture itself is written nowhere. So each mesh's textures are handled as it is 
 
 `TextureFolder` defaults to the mesh folder. The textures written are in the result.
 
-## 4. What an armour copies
+## 4. Into the world
+
+An imported record is usable once something puts it where a player meets it. Vanilla
+does that three ways, and each is a call:
+
+| | Vanilla | Call |
+| --- | --- | --- |
+| placed in a cell | 10,019 statics, 1,735 activators, 181 weapons … | `Place(record, cell, placement)`, `PlaceInWorldspace(record, worldspace, placement)` |
+| drawn from a leveled list | 3,023 weapons, 2,730 armours | `AddToLeveledList(record, list, level, count)` |
+| in a container | 3,184 weapons, 3,134 armours | `AddToContainer(record, container, count)` |
+
+- **A cell is overridden to hold a reference**, as the Creation Kit does. An interior cell
+  is named by editor id; an exterior one is found by position, because most have no editor
+  id: the 4,096-unit square at `(floor(x / 4096), floor(y / 4096))` of the worldspace. A
+  cell's context has its sub-block and block above it, and its worldspace above those.
+- **Rotation is given in degrees**, as the Creation Kit shows it, and written in radians,
+  as the record holds it.
+- **A leveled list or a container is overridden whole.** Another plugin overriding the
+  same list wins or loses the entire list by load order, so two mods adding to one list
+  need a patcher that merges them.
+
+## 5. What an armour copies
 
 Armour is the one type whose meshes live on another record, and the one with the most
 choices:
@@ -144,7 +165,7 @@ ARMO MyMod_Cuirass            copy of ArmorIronCuirass
 separate piece. Each is copied and given the same meshes, which is right for a single
 piece and a starting point for the rest; the result notes it.
 
-## 5. Traps
+## 6. Traps
 
 - **Paths in the archives are separated by `/` on Linux** and by `\` in the records.
   Compare the two after normalising, or every lookup misses.

@@ -37,11 +37,11 @@ namespace SKAssets.Authoring
     /// left as they are.
     /// </para>
     /// </remarks>
-    public sealed class PluginAuthoring : IDisposable
+    public sealed partial class PluginAuthoring : IDisposable
     {
         private readonly List<ISkyrimModDisposableGetter> _opened = [];
         private readonly IReadOnlyList<ModKey> _loadOrder;
-        private readonly ILinkCache _cache;
+        private readonly ILinkCache<ISkyrimMod, ISkyrimModGetter> _cache;
         private readonly IMeshImporter _meshes;
 
         /// <summary>A new plugin against plugins already open, in load order.</summary>

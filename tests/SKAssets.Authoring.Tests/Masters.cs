@@ -2,6 +2,7 @@ using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
+using Noggog;
 using SKAssets.Content.Nif;
 
 namespace SKAssets.Authoring.Tests
@@ -71,6 +72,29 @@ namespace SKAssets.Authoring.Tests
 
             var rock = mod.Statics.AddNew("RockCliff01");
             rock.Model = new Model { File = @"Landscape\Rocks\RockCliff01.nif" };
+
+            // Somewhere to put things: an inn, a patch of wilderness, a loot list, a merchant's chest.
+            var inn = new Cell(mod) { EditorID = "WhiterunBanneredMare", Flags = Cell.Flag.IsInteriorCell };
+            mod.Cells.Records.Add(new CellBlock
+            {
+                BlockNumber = 0,
+                GroupType = GroupTypeEnum.InteriorCellBlock,
+                SubBlocks = [new CellSubBlock { BlockNumber = 0, GroupType = GroupTypeEnum.InteriorCellSubBlock, Cells = [inn] }],
+            });
+
+            var tamriel = new Worldspace(mod) { EditorID = "Tamriel" };
+            var wild = new Cell(mod) { Grid = new CellGrid { Point = new P2Int(1, 2) } };
+            tamriel.SubCells.Add(new WorldspaceBlock
+            {
+                BlockNumberX = 0, BlockNumberY = 0, GroupType = GroupTypeEnum.ExteriorCellBlock,
+                Items = [new WorldspaceSubBlock { BlockNumberX = 0, BlockNumberY = 0, GroupType = GroupTypeEnum.ExteriorCellSubBlock, Items = [wild] }],
+            });
+            mod.Worldspaces.Add(tamriel);
+
+            var loot = mod.LeveledItems.AddNew("LItemWeaponSword");
+            loot.Entries = [];
+            var chest = mod.Containers.AddNew("MerchantWhiterunBlacksmithChest");
+            chest.Items = [];
 
             return mod;
         }

@@ -377,7 +377,9 @@ containers, flora, trees, lights, the inventory items, books, scrolls, ammunitio
 weapons and armour. **`docs/authoring.md`** is what each owns and shares, measured over
 the masters, and where each FBX goes. Each mesh is converted by NIFBX and checked
 against the record that names it. Its textures come with it: a file the FBX names beside
-it is written as a DDS under `Textures`, and the mesh pointed at it.
+it is written as a DDS under `Textures`, and the mesh pointed at it. And it can be put
+into the game: placed in a cell by name or on a worldspace by position, or added to a
+leveled list or a container.
 
 ## What it does not find yet
 
