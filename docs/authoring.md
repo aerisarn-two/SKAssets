@@ -217,8 +217,8 @@ CreatureResult direwolf = authoring.ImportCreature(new NewCreature
 - **The body** is an armour import into a copy of the template's skin; the skin and its
   addons are made to dress the new race, since an addon names the races it fits.
 - **The animations** go through `SKAssets.Export`'s clip exchange into the new project:
-  written as the new creature's own files, with their root motion in its cache entry.
-  Converting runs Havok's codec (`mopper`).
+  written as the new creature's own files, uncompressed, with their root motion in its
+  cache entry. No Havok codec runs to write them, so nothing needs Wine off Windows.
 - **Shared on purpose**: the movement types and sound descriptors the graph names by
   `iState_` constant and by event, since the graph is unchanged and the names still find
   them (`docs/new-race.md` §1.3–1.4).

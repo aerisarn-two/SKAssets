@@ -169,9 +169,14 @@ namespace SKAssets.Export.Tests
                 $"rotation drifted {worstRotation} at {worst}");
         }
 
-        /// <summary>An animation packfile as frames of bone transforms.</summary>
+        /// <summary>
+        /// An animation packfile as frames of bone transforms: an import writes it uncompressed,
+        /// and the game's are spline-compressed, for Havok's codec to read.
+        /// </summary>
         private static SampledAnimation Decoded(string path, IAnimationCodec codec)
         {
+            if (HKSK.Havok.UncompressedAnimation.Read(path) is { } raw) return raw;
+
             (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _) =
                 HkxAnimationFile.ReadAnimation(path);
 

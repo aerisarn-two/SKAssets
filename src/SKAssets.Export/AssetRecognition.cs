@@ -183,13 +183,15 @@ namespace SKAssets.Export
                 // animations, and those say how long they are without being decoded.
                 try
                 {
-                    (SplineAnimationData spline, _, _) = HkxAnimationFile.ReadAnimation(path);
+                    // Uncompressed, as an import writes one, or compressed, as the game ships them.
+                    (int frames, int tracks) = HKSK.Havok.UncompressedAnimation.Read(path) is { } raw
+                        ? (raw.FrameCount, raw.TrackCount)
+                        : HkxAnimationFile.ReadAnimation(path) is var (spline, _, _) ? (spline.NumFrames, spline.TransformTrackCount) : (0, 0);
 
                     return new RecognisedAsset(
                         path,
                         AssetKind.HavokAnimation,
-                        $"a Havok animation: {spline.NumFrames} frames over "
-                            + $"{spline.TransformTrackCount} tracks");
+                        $"a Havok animation: {frames} frames over {tracks} tracks");
                 }
                 catch (Exception inner) when (inner is not OutOfMemoryException)
                 {

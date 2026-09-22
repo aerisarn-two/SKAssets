@@ -214,13 +214,19 @@ namespace SKAssets.Export
 
                 try
                 {
-                    (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _,
-                     IReadOnlyList<AnnotationTrack> annotations) = HkxAnimationFile.ReadAnimationWithEvents(path);
-
-                    clip = codec.Decompress(spline) with
+                    // An imported animation is uncompressed and is its own samples; the game's are
+                    // spline-compressed, and Havok's codec reads them.
+                    SampledAnimation samples;
+                    if (HKSK.Havok.UncompressedAnimation.Read(path) is { } raw) samples = raw;
+                    else
                     {
-                        TrackToBone = trackToBone,
-                        Annotations = annotations,
+                        (SplineAnimationData spline, IReadOnlyList<short> trackToBone, _,
+                         IReadOnlyList<AnnotationTrack> annotations) = HkxAnimationFile.ReadAnimationWithEvents(path);
+                        samples = codec.Decompress(spline) with { TrackToBone = trackToBone, Annotations = annotations };
+                    }
+
+                    clip = samples with
+                    {
                         RootMotion = slot.Motion is { } movement
                             ? Conversions.ToFbx(movement)
                             : RootMotion.None,

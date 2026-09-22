@@ -46,7 +46,8 @@ namespace SKAssets.Authoring
 
         /// <summary>
         /// FBX files of clips, each stack named for the animation it replaces or adds, as
-        /// <c>SKAssets.Export</c>'s clip exchange reads them. Converting needs Havok's codec.
+        /// <c>SKAssets.Export</c>'s clip exchange reads them. Each is written uncompressed: exact,
+        /// and with no Havok codec to run.
         /// </summary>
         public IReadOnlyList<string> Animations { get; init; } = [];
 
