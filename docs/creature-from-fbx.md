@@ -1,7 +1,8 @@
 # A creature from FBX to the game, with its behaviour assembled
 
-    Status:   GUIDE over measured ground. The copy route (§1) is built and tested
-              against the game; the assembly route (§2) is designed in HKSK and
+    Status:   GUIDE over measured ground. The copy route (§0, docs/authoring.md
+              §6) is built and checked against the game's files, not yet in a
+              running game; the assembly route (§4–§6) is designed in HKSK and
               not yet built. Every step says which.
     Reads:    docs/new-race.md (the records), docs/authoring.md §6 (the copy
               route), docs/skeleton-exchange.md and docs/animation-export.md (the
@@ -14,14 +15,14 @@
 ## 0. Two routes, and when each applies
 
 A creature is a skeleton, a Havok project and a dozen records. The game holds 49
-projects that carry a behaviour, and the behaviour is the part nobody writes from
-nothing -- so there are two ways to get one:
+actor projects -- the ones a race wears and the caches carry -- and the behaviour
+graph is the part nobody writes from nothing. So there are two ways to get one:
 
 | | **copy a creature** (`ImportCreature`, built) | **assemble a behaviour** (`HKSK.Assembly`, designed) |
 | --- | --- | --- |
 | start from | a template race the game has | the animations you have, with roles |
 | the graph | the template's, copied and renamed | written from templates per plan and module |
-| the animations | must replace the template's by name, one for one | any set at or above the floor (seven) |
+| the animations | replace the template's by name; one that matches none is listed but no clip plays it, since the graph is the template's | any set at or above the floor (seven) |
 | the skeleton | any, if the rig is exchanged whole | any |
 | fits when | the new creature *is* a wolf, a draugr, a chicken with a new skin and re-animated clips | the creature's animation set matches no shipped creature: fewer clips, more attacks, a different plan |
 | costs | nothing the template did not already pay | the graph template writer, and three record fields written from the plan instead of copied (§6); everything else -- the skeleton, the mesh to NIF with its textures, the records, the sounds, the caches -- is `ImportCreature`'s code as it stands |
@@ -60,7 +61,10 @@ Built. `SKAssets.Export`'s skeleton exchange turns the FBX into three things:
 | the ragdoll in the same `.hkx` | the `sk_`-tagged bodies and constraints | the character file's `ragdollName`; the shell's ragdoll modifiers |
 
 Check with `SkeletonRules.CheckRig` (the `.nif` carries the rig's bones bar Havok's
-`x_` ones) and, after the body, `SkeletonRules.CheckSkin`.
+`x_` ones) and, after the body, `SkeletonRules.CheckSkin`. The animations are bound
+to this rig by bone name, so every stack should drive bones the rig has:
+`ClipReport.Inert` lists stacks that bound none, and a stack that binds only some is
+a clip that animates only some.
 
 What the assembly will ask of the skeleton, all by bone name and all optional
 (HKSK `docs/behavior-assembly.md` §2.2):
@@ -89,28 +93,38 @@ sounds will live (§6).
 
 Built for the import; the roles are the assembly's input.
 
-`SKAssets.Export`'s clip exchange writes each stack as an uncompressed animation in
-the project's folder and puts its travel into the cache as root motion. Then each
-animation is given **roles** -- what it is, not what it is called, because the
-shipped names agree on nothing (`MTForward`, `WalkForward`, `Forward_Walk`, `RunF`):
+Each animation is given **roles** -- what it is, not what it is called, because the
+shipped names agree on nothing (`MTForward`, `WalkForward`, `Forward_Walk`, `RunF`).
+A roled animation names the FBX and the stack inside it; the role record is
+positional, so its members are given by name:
 
 ```csharp
 var animations = new List<RoledAnimation>
 {
-    new("Animations/Idle.hkx",          [new(RoleKind.Idle)]),
-    new("Animations/WalkForward.hkx",   [new(RoleKind.Walk, Heading.Forward)]),
-    new("Animations/RunForward.hkx",    [new(RoleKind.Run,  Heading.Forward)]),
-    new("Animations/TurnLeft.hkx",      [new(RoleKind.TurnInPlace, Side.Left),
-                                         new(RoleKind.TurnInPlace, Side.Right, Mirror: true)]),
-    new("Animations/Attack1.hkx",       [new(RoleKind.Attack, Name: "attackStart_Bite")],
-                                        Events: [new("HitFrame", 0.40f), new("preHitFrame", 0.25f)]),
-    new("Animations/Recoil.hkx",        [new(RoleKind.Recoil)]),
-    new("Animations/StaggerSmall.hkx",  [new(RoleKind.Stagger, Magnitude: Magnitude.Small)]),
-    new("Animations/StaggerLarge.hkx",  [new(RoleKind.Stagger, Magnitude: Magnitude.Large)]),
-    new("Animations/Death.hkx",         [new(RoleKind.Death)]),
-    new("Animations/GetUp.hkx",         [new(RoleKind.GetUp), new(RoleKind.Reanimate)]),
+    new("clips.fbx", Stack: "Idle",         Roles: [new(RoleKind.Idle)]),
+    new("clips.fbx", Stack: "WalkForward",  Roles: [new(RoleKind.Walk, Heading: Heading.Forward)]),
+    new("clips.fbx", Stack: "RunForward",   Roles: [new(RoleKind.Run,  Heading: Heading.Forward)]),
+    new("clips.fbx", Stack: "TurnLeft",     Roles: [new(RoleKind.TurnInPlace, Side: Side.Left),
+                                                    new(RoleKind.TurnInPlace, Side: Side.Right, Mirror: true)]),
+    new("clips.fbx", Stack: "Attack1",      Roles: [new(RoleKind.Attack, Name: "attackStart_Bite")],
+                                            Events: [new("preHitFrame", 0.25f), new("HitFrame", 0.40f)]),
+    new("clips.fbx", Stack: "Recoil",       Roles: [new(RoleKind.Recoil)]),
+    new("clips.fbx", Stack: "StaggerSmall", Roles: [new(RoleKind.Stagger, Magnitude: Magnitude.Small)]),
+    new("clips.fbx", Stack: "StaggerLarge", Roles: [new(RoleKind.Stagger, Magnitude: Magnitude.Large)]),
+    new("clips.fbx", Stack: "Death",        Roles: [new(RoleKind.Death)]),
+    new("clips.fbx", Stack: "GetUp",        Roles: [new(RoleKind.GetUp), new(RoleKind.Reanimate)]),
 };
 ```
+
+**The import happens inside `Assemble`, in this order, and the order is the
+point.** The character file's animation list is every clip's cache index, so the
+project has to exist before an animation can be added to it: `Assemble` creates the
+project and an empty character file, then imports each roled animation in the order
+given -- `ClipExchange.ImportClips` writes the stack as an uncompressed animation
+under the project's `Animations`, `AddAnimation` appends it, its travel goes into
+the cache row as root motion and its annotations become events -- and only then
+writes the graph over the list. A Havok animation already on disk is added the same
+way without the conversion. Nothing about the FBX has to be done beforehand.
 
 `BehaviorAssembler.GuessRoles(paths)` proposes this from the file names with the
 census's token rules (`idle`, `forward`, `left`, `walk`, `run`, `attack`, `power`,
@@ -124,9 +138,10 @@ velocity otherwise. So:
 
 | role | root track |
 | --- | --- |
-| walk, run, trot, sprint, swim, turn loops | **required** -- not to move (that is the controller) but because the speed table and the ladder rungs are computed from it |
-| attack, power attack, canned turn, bash, get-up, death, stagger, recoil, aggro, kill-move victim | **required where the clip should carry the actor**; combat measures an attack's reach from it |
-| idles, combat idle, equip, unequip, block, feed, lay | none |
+| walk, run, trot, sprint, swim | **required** -- not to move (that is the controller) but because the speed table and the ladder rungs are computed from it |
+| canned turn | **required, as rotation on the root**: the state is animation-driven and the turn is what the block carries |
+| attack, power attack, bash, get-up, death, stagger, recoil, aggro, kill-move victim | **required where the clip should carry the actor**; combat measures an attack's reach from it |
+| turn-in-place loops, idles, combat idle, equip, unequip, block, feed, lay | none: the controller turns the actor and the clip poses it |
 | cruise, hover idle (flyers) | none; flight is motion-driven |
 
 A locomotion clip authored without travel records a creature that cannot move.
@@ -148,12 +163,15 @@ var spec = new CreatureSpec
         LookAtChain = ["Spine2", "Neck1", "Neck2", "Head"],
         Legs = [new("LFrontLeg1", "LFrontLeg2", "LFrontLegToe", KneeAxis: new(1, 0, 0)), /* … */],
     },
+    // A MOVT holds walk and run together, eight speeds; one iState per distinct type,
+    // and the race's roles point at them. Walk and run are one type here; a swimmer
+    // adds a second.
     Movements = new Dictionary<MovementRole, MovementType>
     {
-        [MovementRole.Walk] = walk,   // eight speeds; becomes MOVT "DirewolfDefault" and iState_DirewolfDefault
-        [MovementRole.Run]  = run,
+        [MovementRole.Walk] = direwolfDefault,   // Name "DirewolfDefault" -> iState_DirewolfDefault
+        [MovementRole.Run]  = direwolfDefault,
     },
-    AttackEvents = ["attackStart_Bite"],
+    // AttackEvents is derived from the Attack roles' names when left out.
 };
 
 AssemblyPlan plan = BehaviorAssembler.Plan(spec);       // nothing written
@@ -165,6 +183,8 @@ AssemblyPlan plan = BehaviorAssembler.Plan(spec);       // nothing written
 // plan.Events    -> the core, plus attackStart_Bite, plus the modules'
 
 AssembledProject built = BehaviorAssembler.Assemble(cache, spec, group: "Canine");
+// `cache` is the output's copy of the three merged files, loaded from SourceMeshes
+// and saved to the output's Meshes; the project lands under Actors/Canine/<Name>/.
 ```
 
 What `Assemble` writes, and what each block is (HKSK
@@ -201,10 +221,10 @@ Built, in `ImportCreature`, and almost all of it carries over unchanged. What
 | the race | `RACE` duplicated; skeleton, project and movement defaults repointed | **changed in one field**: `Attacks` written from the plan's attack events instead of copied |
 | the body | the armour import (§3): mesh to NIF, textures to DDS, ARMO and ARMA copied and re-raced | same |
 | the body part data | copied when the skeleton is replaced | same |
-| sounds | the footstep set copied onto the body; per event given, footstep, impact set, impact and sound copied and the files placed under `Sound\FX` | same, the events now checked against the plan's triggers as well as the set |
+| sounds | the footstep set copied onto the body; per event given, footstep, impact set, impact and sound copied and the files placed under `Sound\FX`; an event the set has no footstep for is refused | **changed**: the kin's set knows the kin's events (`NPCWolfBark`), not this creature's, so an event the triggers carry and the set lacks gets a footstep, impact set, impact and sound **added**, tagged with the event, instead of being refused |
 | the NPC | copied, re-raced, re-skinned | same |
-| the caches | the template's entry copied, the clips imported by `ClipExchange.ImportClips`, `CacheGeneration.Amend`, save | **changed**: the entry is the assembly's, the clips are already in it; `Amend` and save as today |
-| idle records | none (the template's idle trees serve, conditioned on the template's race) | **new**: one `IDLE` per `idle*Start` event the assembly declared, plus the kin's non-combat root re-conditioned on the new race |
+| the caches | the template's entry copied, the clips imported by `ClipExchange.ImportClips`, `CacheGeneration.Amend`, save | **changed**: the entry and the clips are the assembly's (§4); `Amend` and save as today |
+| idle records | none (the template's idle trees serve, conditioned on the template's race) | **new**: one `IDLE` per `idle*Start` event the assembly declared, **linked into** a copy of the kin's non-combat idle root re-conditioned on the new race -- an idle record that hangs off no root's parent-and-sibling chain is never picked; and the kin's kill-move (`KillMove<Kin>Root`) and camera-path idles, which test the *victim's* race, copied and re-conditioned, or the creature is never kill-moved |
 
 So the new code is the graph template writer in HKSK and, here, three substitutions
 in a sibling of `ImportCreature`. The **kin** race is the shipped creature whose
@@ -217,8 +237,8 @@ where each comes from:
 | `MOVT` | -- | one per `plan.IStates` key, `MNAM` exactly the suffix, the eight speeds from `spec.Movements` | the speeds |
 | `BPTD` | copied, its model the new skeleton `.nif` | -- | -- |
 | `ARMO` / `ARMA` | the skin's shape | -- | the body (§3) |
-| `FSTS` / `FSTP` / `IPDS` / `SNDR` | the kin's set copied onto the body | the events the triggers carry | the audio files per event, as `Sounds` |
-| `IDLE` | the kin's non-combat idle root and its conditions, re-conditioned on the new race | one per `idle*Start` event the assembly declared, its `ENAM` that event; for each kill-move victim state, the paired idle's `pa_` event is the killer's and needs no record on this side | which idles the AI may pick |
+| `FSTS` / `FSTP` / `IPDS` / `SNDR` | the kin's set copied onto the body, its entries kept for the kin's events the triggers still use | a footstep chain added per triggered event the set lacks, tagged with the event | the audio files per event, as `Sounds`; an event with no audio gets the chain with the kin's sound |
+| `IDLE` | the non-combat root, the kill-move root and the camera paths, copied and re-conditioned on the new race | one per `idle*Start` event the assembly declared, its `ENAM` that event, chained under the copied root | which idles the AI may pick, and their conditions |
 | `CSTY`, `CLAS`, `FACT`, `LVLI`, `PACK` | copied | -- | -- |
 | `NPC_` | a copy of the kin's `Npc` with the new race, skin, class, style, factions, death item | -- | which |
 | `LVLN` | -- | -- | the leveled lists that put it in the world (`AddToLeveledList`) |
@@ -227,19 +247,36 @@ Two dependencies no FormLink records, and the assembly makes both explicit: the
 movement types by `MNAM` from the graph's constants, and the sound descriptors by
 editor id from the animations' events. Both come off the plan.
 
+**Kill-moves are not a role like the others.** A shipped kill-move is one paired
+animation with two halves, the killer's on the human rig and the victim's on the
+creature's, and the humanoid graph holds the killer's state for each one that
+exists (`docs/paired-animations.md`, HKSK). So a new creature can be kill-moved in
+exactly two cases: its rig is a shipped victim's rig, bone for bone, and it declares
+the victim states for those animations under their shipped names; or a paired
+animation is authored against both rigs, imported through HKSK's paired exchange,
+and the killer's state is added to the humanoid graph as well as the victim's to the
+creature's -- which is an edit of `0_master`, outside anything here. Absent either,
+the `KillMoveVictim` roles are left out and the creature dies the ordinary way; the
+kin's kill-move idles are then not copied either, since they would choose kill-moves
+the pair cannot start.
+
 The proposed call, a sibling of `ImportCreature` with the graph step swapped:
 
 ```csharp
 CreatureResult built = authoring.AssembleCreature(new NewCreatureFromRoles
 {
     Kin = "WolfRace",                      // records borrowed; no Havok file of it is used
-    Name = "Direwolf",
-    SourceMeshes = extractedMeshes,        // the three caches; the assembly adds a project
+    Name = "Direwolf",                     // files and records prefixed like every import's
+    SourceMeshes = extractedMeshes,        // the game's three caches; copied to the output and amended
     Skeleton = "direwolf_skeleton.fbx",
     Body = new() { [ModelSlot.Main] = "direwolf.fbx" },
-    Animations = animations,               // RoledAnimation, as §4; FBX paths import first
+    Animations = animations,               // RoledAnimation, as §4; imported inside Assemble
     Bones = bones,
-    Speeds = new() { ["DirewolfDefault"] = MovementSpeeds.Uniform(150, 450) },
+    Movements = new()                      // by role; a named type with eight speeds becomes a MOVT
+    {                                      // and an iState_<name>; two roles may share one type
+        [MovementRole.Walk] = new("DirewolfDefault", MovementSpeeds.Uniform(150, 450)),
+        [MovementRole.Run]  = new("DirewolfDefault", MovementSpeeds.Uniform(150, 450)),
+    },
     Sounds = new() { ["NPCDirewolfBark"] = ["bark.wav"] },
     Npc = "EncWolf",
 });
@@ -256,6 +293,12 @@ have to be rebuilt together with them. `animgen` does that over a `Data` folder:
 The set data is rebuilt from the graph and the plugin's idle and attack events, and
 the speed table from the graph's ladders and the `MOVT`s -- which is why the `MNAM`
 names have to be right before this step, not after.
+
+Running the same request twice is safe for the caches and the records: an amend of
+an entry that is already right changes nothing (HKSK `docs/animation-data.md` §3),
+and the records are made by editor id. The files are overwritten. What is not
+undone by a re-run is a name changed between runs: the old project, records and
+cache rows stay, under the old name, beside the new.
 
 ## 8. Checks, before the game and in it
 
@@ -303,4 +346,9 @@ each failure hides the next:
   killer's graph listens for `pa_KillMoveBearA`: the engine toggles the prefix and
   starts the pair only if both graphs declare their form.
 - **Two creature mods overwrite each other's caches** unless rebuilt together.
+- **A `MOVT` name is global.** `MNAM` is matched by name across the load order, so a
+  new creature's types carry the prefix like its records; `DogDefault` would find
+  the dog's.
+- **A kill-move victim needs the killer's half too**, in the humanoid graph, and a
+  paired animation authored for both rigs; a new rig cannot borrow the wolf's.
 - **The paths in the archives use `/`** and the records `\`; compare normalised.
