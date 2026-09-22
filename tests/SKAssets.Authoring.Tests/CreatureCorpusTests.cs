@@ -140,6 +140,72 @@ namespace SKAssets.Authoring.Tests
         }
     }
 
+    /// <summary>A creature with a voice of its own.</summary>
+    public sealed class CreatureSoundCorpusTests : IDisposable
+    {
+        private readonly string _out = Path.Combine(Path.GetTempPath(), "skassets-creature-sounds-" + Guid.NewGuid().ToString("N"));
+
+        public void Dispose()
+        {
+            if (Directory.Exists(_out)) Directory.Delete(_out, recursive: true);
+        }
+
+        /// <summary>
+        /// The direwolf's bark: its body's footstep set is its own, the footstep tagged with the bark
+        /// event leads through its own impact set and impact to a sound naming the new files, and
+        /// every other event still sounds as the wolf's.
+        /// </summary>
+        [HavokMastersFact]
+        public void ADirewolfBarksWithItsOwnVoice()
+        {
+            string[] audio = [Path.Combine(_out, "in", "bark_01.wav"), Path.Combine(_out, "in", "bark_02.wav")];
+            Directory.CreateDirectory(Path.Combine(_out, "in"));
+            foreach (string file in audio) File.WriteAllBytes(file, "RIFF"u8.ToArray());
+
+            // an event the body does not sound is refused before anything is written
+            using (var authoring = PluginAuthoring.Open(Game.Data!, "MyMod.esp", _out))
+            {
+                Assert.Throws<ArgumentException>(() => authoring.ImportCreature(new NewCreature
+                {
+                    Template = "WolfRace", Name = "Nobark", SourceMeshes = Game.Meshes!,
+                    Sounds = new Dictionary<string, IReadOnlyList<string>> { ["NoSuchEvent"] = audio },
+                }));
+                Assert.Empty(authoring.Plugin.EnumerateMajorRecords());
+                Assert.False(Directory.Exists(Path.Combine(_out, "Meshes")));
+            }
+
+            using (var authoring = PluginAuthoring.Open(Game.Data!, "MyMod.esp", _out))
+            {
+                authoring.ImportCreature(new NewCreature
+                {
+                    Template = "WolfRace", Name = "Direwolf", SourceMeshes = Game.Meshes!,
+                    Sounds = new Dictionary<string, IReadOnlyList<string>> { ["NPCWolfBark"] = audio },
+                });
+                authoring.Save();
+            }
+
+            using var plugin = SkyrimMod.CreateFromBinaryOverlay(Path.Combine(_out, "MyMod.esp"), SkyrimRelease.SkyrimSE);
+            IFootstepSetGetter set = Assert.Single(plugin.FootstepSets);
+            Assert.All(plugin.ArmorAddons, aa => Assert.Equal(set.FormKey, aa.FootstepSound.FormKey));
+
+            IFootstepGetter bark = Assert.Single(plugin.Footsteps);
+            Assert.Equal("NPCWolfBark", bark.Tag);
+            Assert.Contains(set.WalkForwardFootsteps, l => l.FormKey == bark.FormKey);
+            Assert.Contains(set.WalkForwardFootsteps, l => l.FormKey.ModKey.FileName == "Skyrim.esm");
+
+            IImpactDataSetGetter impacts = Assert.Single(plugin.ImpactDataSets);
+            Assert.Equal(bark.ImpactDataSet.FormKey, impacts.FormKey);
+            IImpactGetter impact = Assert.Single(plugin.Impacts);
+            Assert.All(impacts.Impacts, i => Assert.Equal(impact.FormKey, i.Impact.FormKey));
+
+            ISoundDescriptorGetter sound = Assert.Single(plugin.SoundDescriptors);
+            Assert.Equal(sound.FormKey, impact.Sound1.FormKey);
+            Assert.Equal([@"Data\Sound\FX\Direwolf\NPCWolfBark\bark_01.wav", @"Data\Sound\FX\Direwolf\NPCWolfBark\bark_02.wav"],
+                sound.SoundFiles.Select(f => f.GivenPath));
+            Assert.True(File.Exists(Path.Combine(_out, "Sound", "FX", "Direwolf", "NPCWolfBark", "bark_02.wav")));
+        }
+    }
+
     /// <summary>A creature's animations from FBX, through Havok's codec.</summary>
     public sealed class CreatureClipCorpusTests : IDisposable
     {

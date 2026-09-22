@@ -65,6 +65,14 @@ namespace SKAssets.Authoring
         /// </summary>
         public IReadOnlyDictionary<string, MovementSpeeds>? Speeds { get; init; }
 
+        /// <summary>
+        /// Sounds of its own, by the animation event that plays them (<c>NPCWolfBark</c>,
+        /// <c>FootFront</c>): the audio files for each, <c>.wav</c> or <c>.xwm</c>. A creature's
+        /// voice and feet are its body's footstep set -- a tag, an impact set and a sound for each
+        /// event -- so the chain is copied for the events given and the rest stay the template's.
+        /// </summary>
+        public IReadOnlyDictionary<string, IReadOnlyList<string>>? Sounds { get; init; }
+
         /// <summary>An NPC to copy as the creature's first, by editor id: <c>EncWolf</c>.</summary>
         public string? Npc { get; init; }
 
@@ -148,6 +156,21 @@ namespace SKAssets.Authoring
             string graph = race.BehaviorGraph.Male?.File.GivenPath
                 ?? throw new ArgumentException($"'{race.EditorID}' names no behaviour graph", nameof(request));
             string templateProject = Path.GetFileNameWithoutExtension(graph.Replace('\\', '/'));
+
+            // Everything a request names is checked before anything is written.
+            if (request.Sounds is { Count: > 0 } asked)
+            {
+                var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (!race.Skin.IsNull && _cache.TryResolve<IArmorGetter>(race.Skin.FormKey, out var body))
+                    foreach (var link in body.Armature)
+                        if (_cache.TryResolve<IArmorAddonGetter>(link.FormKey, out var aa) && _cache.TryResolve<IFootstepSetGetter>(aa.FootstepSound.FormKey, out var steps))
+                            foreach (var step in steps.EnumerateFormLinks())
+                                if (_cache.TryResolve<IFootstepGetter>(step.FormKey, out var f) && f.Tag is { } tag) tags.Add(tag);
+
+                if (asked.Keys.FirstOrDefault(k => !tags.Contains(k)) is { } stray)
+                    throw new ArgumentException($"'{race.EditorID}' sounds no event '{stray}'; its body's footstep set has "
+                        + (tags.Count == 0 ? "none" : string.Join(", ", tags.Order())), nameof(request));
+            }
 
             // ------------------------------------------------ the Havok files
 
@@ -325,7 +348,12 @@ namespace SKAssets.Authoring
                         aa.AdditionalRaces.Clear();
                     }
                 copy.Skin.SetTo(dressed);
+
+                if (request.Sounds is { Count: > 0 } sounds)
+                    Voice(dressed, sounds, id, records, files, notes);
             }
+            else if (request.Sounds is { Count: > 0 })
+                throw new ArgumentException($"'{race.EditorID}' wears no skin, so its body has no footstep set to give sounds to", nameof(request));
 
             if (request.Skeleton is not null && newSkeletonModel is not null
                 && !race.BodyPartData.IsNull && _cache.TryResolve<IBodyPartDataGetter>(race.BodyPartData.FormKey, out var parts))
@@ -387,6 +415,105 @@ namespace SKAssets.Authoring
             _caches = caches;
 
             return new CreatureResult(records[0], records, project, [.. files.Distinct()], amended, clips, findings, notes);
+        }
+
+        /// <summary>
+        /// Gives a creature's body sounds of its own: its footstep set copied, and for each event
+        /// given, the footstep with that tag, its impact set, the impacts in it and the sound they
+        /// play -- the last naming the new audio files.
+        /// </summary>
+        /// <remarks>
+        /// The chain is the one the masters have for every creature sound: the wolf's footstep
+        /// <c>NPCWolfBarkFootstep</c> is tagged <c>NPCWolfBark</c>, the event its animations send, and
+        /// its impact set's 78 entries, one per material, all play one impact whose sound is
+        /// <c>NPCWolfBark</c>.
+        /// </remarks>
+        private void Voice(Armor skin, IReadOnlyDictionary<string, IReadOnlyList<string>> sounds, string id,
+            List<AuthoredRecord> records, List<string> files, List<string> notes)
+        {
+            var addons = skin.Armature.Select(l => Plugin.ArmorAddons.TryGetValue(l.FormKey, out var aa) ? aa : null)
+                .OfType<ArmorAddon>().Where(aa => !aa.FootstepSound.IsNull).ToList();
+            if (addons.Count == 0) throw new ArgumentException("the creature's body names no footstep set to give sounds to");
+            if (!_cache.TryResolve<IFootstepSetGetter>(addons[0].FootstepSound.FormKey, out var shared))
+                throw new ArgumentException("the creature's footstep set is not in the load order");
+
+            var set = Plugin.FootstepSets.DuplicateInAsNewRecord<FootstepSet, IFootstepSetGetter>(shared, id + "FootstepSet");
+            records.Add(new AuthoredRecord(set.FormKey, nameof(FootstepSet), set.EditorID!, shared.FormKey));
+            foreach (var aa in addons) aa.FootstepSound.SetTo(set);
+
+            var done = new Dictionary<FormKey, Footstep>();
+            var voiced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var list in new[] { set.WalkForwardFootsteps, set.RunForwardFootsteps, set.WalkForwardAlternateFootsteps,
+                                         set.RunForwardAlternateFootsteps, set.WalkForwardAlternateFootsteps2 })
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (!_cache.TryResolve<IFootstepGetter>(list[i].FormKey, out var step)) continue;
+                    if (step.Tag is not { } tag || !sounds.TryGetValue(tag, out var audio)) continue;
+
+                    if (!done.TryGetValue(step.FormKey, out Footstep? made))
+                    {
+                        done[step.FormKey] = made = Own(step, tag, audio);
+                        voiced.Add(tag);
+                    }
+                    list[i] = made.ToLink<IFootstepGetter>();
+                }
+
+            if (sounds.Keys.FirstOrDefault(k => !voiced.Contains(k)) is { } stray)
+                throw new ArgumentException($"the creature's footstep set has no event '{stray}'; it has "
+                    + string.Join(", ", shared.EnumerateFormLinks().Select(l => _cache.TryResolve<IFootstepGetter>(l.FormKey, out var f) ? f.Tag : null).OfType<string>().Distinct()));
+            notes.Add($"{voiced.Count} sounds of its own: {string.Join(", ", voiced)}");
+
+            Footstep Own(IFootstepGetter step, string tag, IReadOnlyList<string> audio)
+            {
+                string name = id + tag;
+                var footstep = Plugin.Footsteps.DuplicateInAsNewRecord<Footstep, IFootstepGetter>(step, name + "Footstep");
+                records.Add(new AuthoredRecord(footstep.FormKey, nameof(Footstep), footstep.EditorID!, step.FormKey));
+
+                if (!_cache.TryResolve<IImpactDataSetGetter>(step.ImpactDataSet.FormKey, out var impacts)) return footstep;
+                var set = Plugin.ImpactDataSets.DuplicateInAsNewRecord<ImpactDataSet, IImpactDataSetGetter>(impacts, name + "ImpactSet");
+                records.Add(new AuthoredRecord(set.FormKey, nameof(ImpactDataSet), set.EditorID!, impacts.FormKey));
+                footstep.ImpactDataSet.SetTo(set);
+
+                // The files, under Sound\FX as vanilla keeps them, and one sound naming them all.
+                var paths = new List<string>();
+                foreach (string file in audio)
+                {
+                    string relative = Path.Combine("Sound", "FX", id, tag, Path.GetFileName(file));
+                    string to = Path.Combine(OutputFolder, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    File.Copy(file, to, overwrite: true);
+                    files.Add(relative.Replace('\\', '/'));
+                    paths.Add(Path.Combine("Data", relative).Replace('/', '\\'));
+                }
+
+                SoundDescriptor? sound = null;
+                var impactCopies = new Dictionary<FormKey, Impact>();
+                for (int i = 0; i < set.Impacts.Count; i++)
+                {
+                    FormKey was = set.Impacts[i].Impact.FormKey;
+                    if (!impactCopies.TryGetValue(was, out Impact? impact))
+                    {
+                        if (!_cache.TryResolve<IImpactGetter>(was, out var from)) continue;
+                        impact = Plugin.Impacts.DuplicateInAsNewRecord<Impact, IImpactGetter>(from, $"{name}Impact{(impactCopies.Count == 0 ? "" : impactCopies.Count)}");
+                        records.Add(new AuthoredRecord(impact.FormKey, nameof(Impact), impact.EditorID!, from.FormKey));
+
+                        if (sound is null && _cache.TryResolve<ISoundDescriptorGetter>(from.Sound1.FormKey, out var played))
+                        {
+                            sound = Plugin.SoundDescriptors.DuplicateInAsNewRecord<SoundDescriptor, ISoundDescriptorGetter>(played, name);
+                            sound.SoundFiles.Clear();
+                            foreach (string path in paths)
+                                sound.SoundFiles.Add(new Mutagen.Bethesda.Plugins.Assets.AssetLink<Mutagen.Bethesda.Skyrim.Assets.SkyrimSoundAssetType>(path));
+                            records.Add(new AuthoredRecord(sound.FormKey, nameof(SoundDescriptor), sound.EditorID!, played.FormKey));
+                        }
+                        if (sound is not null) impact.Sound1.SetTo(sound);
+                        impactCopies[was] = impact;
+                    }
+                    set.Impacts[i].Impact.SetTo(impact);
+                }
+
+                return footstep;
+            }
         }
 
         /// <summary>

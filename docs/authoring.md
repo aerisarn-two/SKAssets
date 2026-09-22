@@ -227,8 +227,15 @@ CreatureResult direwolf = authoring.ImportCreature(new NewCreature
   shared graph declares every species' (the quadruped graph 17), where the wolf's own root
   declares 2. The race's default movement types follow, and the speed table is written
   from the new records: a direwolf given an 800 run sweeps to 1,600.
-- **Shared on purpose**: the sound descriptors the animations name by editor id
-  (`docs/new-race.md` §1.3), and, without the option above, the movement types.
+- **Sounds of its own**, with `Sounds`: the audio files for each animation event given.
+  A creature's voice and feet are its body's footstep set: the wolf's footstep
+  `NPCWolfBarkFootstep` is tagged `NPCWolfBark`, the event its animations send, and its
+  impact set's 78 entries, one per material, all play one impact whose sound is
+  `NPCWolfBark`. So the set is copied onto the creature's body, and for each event given
+  the footstep, impact set, impact and sound are copied, the sound naming the new files
+  under `Sound\FX\<creature>\<event>`. Every other event keeps the template's sound. An
+  event the body's set does not have is refused before anything is written.
+- **Shared unless asked**: the movement types and the sounds, both found by name.
 
 Against the game, the wolf cloned as a direwolf opens from the caches written as an actor
 with every behaviour, clip and root motion the wolf has, beside the game's 429 projects; a
