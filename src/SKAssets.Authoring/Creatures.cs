@@ -228,6 +228,9 @@ namespace SKAssets.Authoring
             // record's own case, which the disc need not share.
             string? newSkeletonModel = null;
             bool rigReplaced = false;
+            NifModel? skeletonNif = null;
+            SkeletonFile? skeletonHavok = null;
+            var bodyNifs = new List<(string Nif, string Fbx)>();
             if (race.SkeletalModel?.Male?.File.GivenPath is { } skeletonModel)
             {
                 string fromMeshes = skeletonModel.Replace('\\', '/');
@@ -256,6 +259,7 @@ namespace SKAssets.Authoring
                     NifModel mesh = SkeletonExchange.ImportMesh(document, schema);
                     string path = Path.Combine(meshes, newSkeletonModel.Replace('\\', Path.DirectorySeparatorChar));
                     mesh.Save(path);
+                    skeletonNif = mesh;
                     foreach (MeshFinding finding in MeshRules.Check(nameof(Race), Content.Nif.NifProfileReader.Read(mesh)))
                         findings.Add((newSkeletonModel, finding));
                 }
@@ -264,6 +268,7 @@ namespace SKAssets.Authoring
                 {
                     string rig = Path.Combine(target, character.RigName.Replace('\\', Path.DirectorySeparatorChar));
                     SkeletonFile imported = SkeletonExchange.ImportHavok(document);
+                    skeletonHavok = imported;
                     SkeletonFile template = HkxSkeletonFile.Read(rig);
 
                     if (SameStructure(template, imported))
@@ -353,6 +358,9 @@ namespace SKAssets.Authoring
                     });
                     records.AddRange(worn.Records);
                     files.AddRange(worn.Meshes.Concat(worn.Textures));
+                    if (body.TryGetValue(ModelSlot.Main, out string? mainFbx))
+                        foreach (string nif in worn.Meshes)
+                            bodyNifs.Add((Path.Combine(OutputFolder, nif.Replace('\\', Path.DirectorySeparatorChar)), mainFbx));
                     findings.AddRange(worn.Findings);
                     dressed = Plugin.Armors[worn.Record.FormKey];
                 }
@@ -402,6 +410,23 @@ namespace SKAssets.Authoring
 
                 copy.BodyPartData.SetTo(bptd);
                 records.Add(new AuthoredRecord(bptd.FormKey, nameof(BodyPartData), bptd.EditorID!, parts.FormKey));
+            }
+
+            // ------------------------------------------------ do the files agree
+
+            // Each file came from its own converter's reading of the FBX; what they mean in the
+            // world is compared, since each is correct on its own (CreatureChecks).
+            if (skeletonNif is not null && skeletonHavok is not null)
+                foreach (MeshFinding finding in CreatureChecks.Skeleton(skeletonNif, skeletonHavok))
+                    findings.Add((newSkeletonModel!, finding));
+            foreach (var (nif, fbx) in bodyNifs.Where(b => File.Exists(b.Nif) && b.Nif.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)))
+            {
+                NifModel worn = NifModel.Load(nif, NifXmlDatabase.LoadEmbedded());
+                string relative = Path.GetRelativePath(OutputFolder, nif);
+                if (skeletonNif is not null)
+                    foreach (MeshFinding finding in CreatureChecks.Skin(worn, skeletonNif)) findings.Add((relative, finding));
+                foreach (MeshFinding finding in CreatureChecks.Triangles(worn, fbx)) findings.Add((relative, finding));
+                foreach (MeshFinding finding in CreatureChecks.Weights(worn)) findings.Add((relative, finding));
             }
 
             // ------------------------------------------------ idle records
