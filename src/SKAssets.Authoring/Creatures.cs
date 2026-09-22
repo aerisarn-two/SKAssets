@@ -404,6 +404,10 @@ namespace SKAssets.Authoring
                 records.Add(new AuthoredRecord(bptd.FormKey, nameof(BodyPartData), bptd.EditorID!, parts.FormKey));
             }
 
+            // ------------------------------------------------ idle records
+
+            CopyIdles(relativeFolder, folder, race, copy, id, records, notes);
+
             if (request.Npc is not null)
             {
                 INpcGetter npc = Resolve<INpcGetter>(request.Npc, nameof(request));
@@ -465,6 +469,91 @@ namespace SKAssets.Authoring
             _caches = caches;
 
             return new CreatureResult(records[0], records, project, [.. files.Distinct()], amended, clips, findings, notes);
+        }
+
+        /// <summary>
+        /// Gives the new behaviour the template's idle records: every <c>IDLE</c> naming a
+        /// behaviour file under the template's folder, copied to name the same file under the
+        /// new one.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// An idle record is how the AI's actions reach a graph -- <c>ActionMoveStart</c> becomes
+        /// <c>moveStart</c> by way of an idle under it -- and it serves only the actors whose
+        /// behaviour is the file it names. The sabre cat's 49 are all
+        /// <c>Meshes\Actors\SabreCat\Behaviors\SabreCatBehavior.hkx</c>: moving, turning,
+        /// swimming, staggering, recoiling, bleeding out, sitting, lying down, dying. A copy of
+        /// its graph under another folder is none of those files, so without copies of its idles
+        /// the creature stands where it is placed and never takes a step.
+        /// </para>
+        /// <para>
+        /// Each copy keeps its place in its tree: an idle's two links are its parent and the
+        /// sibling checked before it, and where either was copied too the copy links to the copy.
+        /// A copy whose parent is an action or another creature's idle hangs beside the original,
+        /// which the engine passes over for any actor but the template. A condition on the
+        /// template's race is moved to the new one.
+        /// </para>
+        /// </remarks>
+        private void CopyIdles(string templateFolder, string newFolder, IRaceGetter templateRace, Race newRace, string id,
+            List<AuthoredRecord> records, List<string> notes)
+        {
+            static string Normal(string path)
+            {
+                string p = path.Replace('/', '\\').TrimStart('\\');
+                return p.StartsWith(@"meshes\", StringComparison.OrdinalIgnoreCase) ? p[7..] : p;
+            }
+
+            string from = Normal(templateFolder).TrimEnd('\\') + "\\";
+            string to = Normal(newFolder).TrimEnd('\\') + "\\";
+
+            bool Names(IIdleAnimationGetter idle) =>
+                idle.Filename?.GivenPath is { Length: > 0 } f && Normal(f).StartsWith(from, StringComparison.OrdinalIgnoreCase);
+
+            // Its own file, or an ancestor's: an idle that names no file serves the graph its
+            // parent does, which is how se-cmd's retarget reads a chain too.
+            bool Serves(IIdleAnimationGetter idle)
+            {
+                var seen = new HashSet<FormKey>();
+                for (IIdleAnimationGetter? at = idle; at is not null && seen.Add(at.FormKey);)
+                {
+                    if (Names(at)) return true;
+                    if (at.Filename?.GivenPath is { Length: > 0 }) return false;
+                    at = at.RelatedIdles.Count > 0 && _cache.TryResolve<IIdleAnimationGetter>(at.RelatedIdles[0].FormKey, out var parent) ? parent : null;
+                }
+                return false;
+            }
+
+            var originals = _cache.PriorityOrder.WinningOverrides<IIdleAnimationGetter>().Where(Serves).ToList();
+
+            var copies = new Dictionary<FormKey, IdleAnimation>();
+            foreach (IIdleAnimationGetter idle in originals)
+            {
+                string editorId = id + (idle.EditorID ?? idle.FormKey.ID.ToString("X6"));
+                IdleAnimation made = Plugin.IdleAnimations.DuplicateInAsNewRecord<IdleAnimation, IIdleAnimationGetter>(idle, editorId);
+
+                if (Names(idle))
+                {
+                    string given = idle.Filename!.GivenPath;
+                    char separator = given.Contains('/') ? '/' : '\\';
+                    string rest = Normal(given)[from.Length..];
+                    made.Filename = new Mutagen.Bethesda.Plugins.Assets.AssetLink<Mutagen.Bethesda.Skyrim.Assets.SkyrimBehaviorAssetType>(
+                        ("Meshes\\" + to + rest).Replace('\\', separator));
+                }
+
+                foreach (IConditionGetter condition in idle.Conditions.Select((c, i) => made.Conditions[i]))
+                    if (condition is Condition { Data: GetIsRaceConditionData isRace } && isRace.Race.Link.FormKey == templateRace.FormKey)
+                        isRace.Race.Link.SetTo(newRace);
+
+                copies[idle.FormKey] = made;
+                records.Add(new AuthoredRecord(made.FormKey, nameof(IdleAnimation), made.EditorID!, idle.FormKey));
+            }
+
+            foreach (IdleAnimation made in copies.Values)
+                for (int i = 0; i < made.RelatedIdles.Count; i++)
+                    if (copies.TryGetValue(made.RelatedIdles[i].FormKey, out IdleAnimation? linked))
+                        made.RelatedIdles[i] = linked.ToLink<IIdleRelationGetter>();
+
+            notes.Add($"{copies.Count} idle records copied onto the new behaviour");
         }
 
         /// <summary>
