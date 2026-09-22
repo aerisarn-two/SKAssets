@@ -219,6 +219,12 @@ playable race on top of it — measured on the wolf and the Nord, including the 
 dependencies no FormLink records: movement types named by the graph and sound
 descriptors named by the animations.
 
+**`docs/creature-from-fbx.md`** is the whole road for a creature whose animations
+match no shipped one: skeleton, body and clips from FBX, each clip given a role, the
+behaviour assembled from those roles by HKSK's assembly API (designed there, not yet
+built), the records written against the names the assembly reports, the caches
+rebuilt, and what to check in the game and in which order.
+
 **`docs/asset-kinds.md`** is the evidence: the eight roles and their counts, what
 each record type names, how an actor and a prop are assembled across files, and
 the traps — the stale split animation cache, the two skeletons inside every
