@@ -59,6 +59,17 @@ namespace SKAssets.Authoring.Tests
             cuirass.Armature.Add(addon.ToLink<IArmorAddonGetter>());
             cuirass.WorldModel = new GenderedItem<ArmorModel?>(new ArmorModel { Model = new Model { File = @"Armor\Iron\CuirassGND.nif" } }, null);
 
+            // A helmet with an addon per race family, as 244 of vanilla's base armours have.
+            var argonian = mod.Races.AddNew("ArgonianRace");
+            var helmet = mod.Armors.AddNew("ArmorIronHelmet");
+            foreach ((string id, Race race, string mesh) in new[] { ("IronHelmetAA", nord, @"Armor\Iron\Helmet.nif"), ("IronHelmetArgonianAA", argonian, @"Armor\Iron\HelmetArgonian.nif") })
+            {
+                var aa = mod.ArmorAddons.AddNew(id);
+                aa.Race.SetTo(race);
+                aa.WorldModel = new GenderedItem<Model?>(new Model { File = mesh }, null);
+                helmet.Armature.Add(aa.ToLink<IArmorAddonGetter>());
+            }
+
             var flies = mod.Projectiles.AddNew("ArrowIronProjectile");
             flies.Model = new Model { File = @"Weapons\Iron\IronArrowProjectile.nif" };
             var arrow = mod.Ammunitions.AddNew("IronArrow");

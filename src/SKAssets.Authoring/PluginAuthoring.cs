@@ -136,6 +136,30 @@ namespace SKAssets.Authoring
             return run.Result(record);
         }
 
+        /// <summary>The addons an armour wears -- traced to its base when it is a variant -- for <see cref="AssetImport.Addons"/>.</summary>
+        public IReadOnlyList<ArmorAddonInfo> AddonsOf(string armor)
+        {
+            IArmorGetter found = (FormKey.TryFactory(armor, out FormKey key)
+                    ? _cache.TryResolve<IArmorGetter>(key, out var byKey) ? byKey : null
+                    : _cache.TryResolve<IArmorGetter>(armor, out var byId) ? byId : null)
+                ?? throw new ArgumentException($"the load order has no Armor '{armor}'", nameof(armor));
+
+            var seen = new HashSet<FormKey>();
+            while (seen.Add(found.FormKey) && !found.TemplateArmor.IsNull && _cache.TryResolve<IArmorGetter>(found.TemplateArmor.FormKey, out var next))
+                found = next;
+
+            string Race(FormKey race) => _cache.TryResolve<IRaceGetter>(race, out var r) ? r.EditorID ?? race.ToString() : race.ToString();
+
+            return [.. found.Armature
+                .Select(l => _cache.TryResolve<IArmorAddonGetter>(l.FormKey, out var a) ? a : null)
+                .OfType<IArmorAddonGetter>()
+                .Select(a => new ArmorAddonInfo(
+                    a.EditorID ?? a.FormKey.ToString(),
+                    [.. new[] { a.Race.FormKey }.Where(r => !r.IsNull).Concat(a.AdditionalRaces.Select(r => r.FormKey)).Select(Race)],
+                    a.WorldModel?.Male?.File.GivenPath,
+                    a.WorldModel?.Female?.File.GivenPath))];
+        }
+
         /// <summary>Writes the plugin to the output folder; the meshes were written as they were imported.</summary>
         /// <returns>The plugin's path.</returns>
         public string Save()
@@ -161,6 +185,10 @@ namespace SKAssets.Authoring
         {
             /// <summary>The asset's editor id with its prefix, which every name written starts from.</summary>
             private readonly string _id = (request.Prefix ?? owner.Prefix) + request.EditorId;
+
+            /// <summary>The FBX slots being written, and the name their meshes take: the request's, or one addon's.</summary>
+            private IReadOnlyDictionary<ModelSlot, string> _fbx = request.Fbx;
+            private string _stem = (request.Prefix ?? owner.Prefix) + request.EditorId;
             private readonly List<AuthoredRecord> _records = [];
             private readonly List<string> _meshes = [];
             private readonly List<string> _textures = [];
@@ -231,21 +259,41 @@ namespace SKAssets.Authoring
                 else if (template.WorldModel is not null) _notes.Add("no ground mesh: the armour lies on the ground as the template does");
 
                 // Every addon the template wears is copied and given the new body meshes. A
-                // template with several -- one per race family, as 244 of vanilla's 1,055 base
-                // armours have -- gets the same meshes on each.
-                if (template.Armature.Count > 1)
-                    _notes.Add($"the template has {template.Armature.Count} addons; each copy wears the same meshes");
+                // template with several -- one per race family or a separate piece, as 244 of
+                // vanilla's 1,055 base armours have -- can be given meshes addon by addon
+                // (AssetImport.Addons); an addon not named wears the import's own, or is left out.
+                var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var worn = new List<IFormLinkGetter<IArmorAddonGetter>>();
 
-                for (int i = 0; i < copy.Armature.Count; i++)
+                for (int i = 0; i < template.Armature.Count; i++)
                 {
-                    if (!owner._cache.TryResolve<IArmorAddonGetter>(copy.Armature[i].FormKey, out var addon)) continue;
+                    if (!owner._cache.TryResolve<IArmorAddonGetter>(template.Armature[i].FormKey, out var addon)) continue;
+
+                    IReadOnlyDictionary<ModelSlot, string>? own =
+                        addon.EditorID is { } key && request.Addons?.GetValueOrDefault(key) is { } slots ? slots : null;
+                    if (own is not null) named.Add(addon.EditorID!);
+                    else if (request.DropUnlistedAddons) { _notes.Add($"'{addon.EditorID}' is not in the import's addons and is left out"); continue; }
 
                     string id = template.Armature.Count == 1 ? _id + "AA" : $"{_id}AA{i}";
                     var aa = owner.Plugin.ArmorAddons.DuplicateInAsNewRecord<ArmorAddon, IArmorAddonGetter>(addon, id);
                     Owned(aa, addon.FormKey);
+
+                    // An addon with meshes of its own names them after itself, so they do not
+                    // overwrite the import's.
+                    (_fbx, _stem) = own is null ? (request.Fbx, _id) : (Merged(own), $"{_id}_{i}");
                     Dress(aa, addon);
-                    copy.Armature[i] = aa.ToLink<IArmorAddonGetter>();
+                    (_fbx, _stem) = (request.Fbx, _id);
+
+                    worn.Add(aa.ToLink<IArmorAddonGetter>());
                 }
+
+                if (request.Addons?.Keys.FirstOrDefault(k => !named.Contains(k)) is { } stray)
+                    throw new ArgumentException($"'{template.EditorID}' wears no addon '{stray}'", nameof(request));
+                if (template.Armature.Count > 1 && named.Count == 0)
+                    _notes.Add($"the template has {template.Armature.Count} addons; each copy wears the same meshes");
+
+                copy.Armature.Clear();
+                copy.Armature.AddRange(worn);
 
                 return Created(copy);
             }
@@ -391,20 +439,20 @@ namespace SKAssets.Authoring
             private void Dress(ArmorAddon aa, IArmorAddonGetter template)
             {
                 bool weighted = template.WorldModel?.Male?.File.GivenPath.EndsWith("_1.nif", StringComparison.OrdinalIgnoreCase) == true;
-                if (weighted && !request.Fbx.ContainsKey(ModelSlot.LightWeight))
+                if (weighted && !_fbx.ContainsKey(ModelSlot.LightWeight))
                     _notes.Add("no light-weight mesh: both body weights are the main mesh");
 
                 Model male = Weighted(ModelSlot.Main, "", weighted);
                 Model? female = template.WorldModel?.Female is null ? null
-                    : request.Fbx.ContainsKey(ModelSlot.Female) ? Weighted(ModelSlot.Female, "_f", weighted)
+                    : _fbx.ContainsKey(ModelSlot.Female) ? Weighted(ModelSlot.Female, "_f", weighted)
                     : male;
                 if (female == male && template.WorldModel?.Female is not null) _notes.Add("no female mesh: the female body wears the male mesh");
                 aa.WorldModel = new GenderedItem<Model?>(male, female);
 
-                if (request.Fbx.ContainsKey(ModelSlot.FirstPerson) || request.Fbx.ContainsKey(ModelSlot.FemaleFirstPerson))
+                if (_fbx.ContainsKey(ModelSlot.FirstPerson) || _fbx.ContainsKey(ModelSlot.FemaleFirstPerson))
                 {
-                    Model? first = request.Fbx.ContainsKey(ModelSlot.FirstPerson) ? Weighted(ModelSlot.FirstPerson, "_1stperson", weighted) : null;
-                    Model? firstFemale = request.Fbx.ContainsKey(ModelSlot.FemaleFirstPerson) ? Weighted(ModelSlot.FemaleFirstPerson, "_f_1stperson", weighted) : first;
+                    Model? first = _fbx.ContainsKey(ModelSlot.FirstPerson) ? Weighted(ModelSlot.FirstPerson, "_1stperson", weighted) : null;
+                    Model? firstFemale = _fbx.ContainsKey(ModelSlot.FemaleFirstPerson) ? Weighted(ModelSlot.FemaleFirstPerson, "_f_1stperson", weighted) : first;
                     aa.FirstPersonModel = new GenderedItem<Model?>(first, firstFemale);
                 }
                 else if (template.FirstPersonModel?.Male is not null) _notes.Add("no first-person mesh: the first-person view wears the template's");
@@ -419,21 +467,29 @@ namespace SKAssets.Authoring
                 if (!weighted) return Model(slot, nameof(ArmorAddon), suffix);
 
                 Model heavy = Model(slot, nameof(ArmorAddon), suffix + "_1");
-                ModelSlot light = slot == ModelSlot.Main && request.Fbx.ContainsKey(ModelSlot.LightWeight) ? ModelSlot.LightWeight : slot;
+                ModelSlot light = slot == ModelSlot.Main && _fbx.ContainsKey(ModelSlot.LightWeight) ? ModelSlot.LightWeight : slot;
                 Model(light, nameof(ArmorAddon), suffix + "_0");
                 return heavy;
+            }
+
+            /// <summary>An addon's own slots, with the import's filling any it leaves out.</summary>
+            private IReadOnlyDictionary<ModelSlot, string> Merged(IReadOnlyDictionary<ModelSlot, string> own)
+            {
+                var merged = new Dictionary<ModelSlot, string>(request.Fbx);
+                foreach ((ModelSlot slot, string fbx) in own) merged[slot] = fbx;
+                return merged;
             }
 
             /// <summary>Converts a slot's FBX to a mesh named from the editor id, and a model naming it.</summary>
             private Model Model(ModelSlot slot, string recordType, string suffix)
             {
-                string relative = Path.Combine(request.MeshFolder, _id + suffix + ".nif").Replace('/', '\\');
+                string relative = Path.Combine(request.MeshFolder, _stem + suffix + ".nif").Replace('/', '\\');
                 string target = Path.Combine(owner.OutputFolder, "Meshes", relative.Replace('\\', Path.DirectorySeparatorChar));
 
                 if (!_converted.ContainsKey(relative))
                 {
                     ImportedMesh mesh = owner._meshes.Import(new MeshTarget(
-                        request.Fbx[slot], target, owner.OutputFolder,
+                        _fbx[slot], target, owner.OutputFolder,
                         request.TextureFolder ?? request.MeshFolder, request.Prefix ?? owner.Prefix));
                     _converted[relative] = target;
                     _meshes.Add(Path.Combine("Meshes", relative).Replace('\\', '/'));

@@ -161,9 +161,28 @@ ARMO MyMod_Cuirass            copy of ArmorIronCuirass
                     └─ FirstPersonModel   the template's, or the FirstPerson slot
 ```
 
-244 of the 1,055 base armours wear more than one addon -- one per race family, a
-separate piece. Each is copied and given the same meshes, which is right for a single
-piece and a starting point for the rest; the result notes it.
+244 of the 1,055 base armours wear more than one addon -- one per race family, or a
+separate piece. `AddonsOf(template)` lists them with the races each dresses, and an
+import can mesh them one by one:
+
+```csharp
+authoring.Import(new AssetImport
+{
+    Kind = AuthoredKind.Armor, Template = "ArmorIronHelmet", EditorId = "Helmet",
+    Fbx = new Dictionary<ModelSlot, string> { [ModelSlot.Main] = "helmet.fbx" },
+    Addons = new Dictionary<string, IReadOnlyDictionary<ModelSlot, string>>
+    {
+        ["IronHelmetArgonianAA"] = new Dictionary<ModelSlot, string> { [ModelSlot.Main] = "helmet_argonian.fbx" },
+    },
+    MeshFolder = @"MyMod\Armor",
+});
+```
+
+An addon named takes its slots from its own map and the rest from the import's, and its
+meshes are named after its place in the template (`MyMod_Helmet_1.nif`) so they do not
+overwrite the import's. An addon not named wears the import's meshes, with a note -- or,
+with `DropUnlistedAddons`, is left out, for a piece only some races wear. Naming an addon
+the template does not wear is refused.
 
 ## 6. Traps
 

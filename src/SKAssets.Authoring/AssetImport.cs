@@ -114,6 +114,17 @@ namespace SKAssets.Authoring
         /// </summary>
         public string? TextureFolder { get; init; }
 
+        /// <summary>
+        /// Meshes for an armour's addons one by one, by the template addon's editor id
+        /// (<see cref="PluginAuthoring.AddonsOf"/> lists them). An addon's slots override
+        /// <see cref="Fbx"/> for it and fall back to it for the rest; an addon not named wears
+        /// <see cref="Fbx"/>, or is left out with <see cref="DropUnlistedAddons"/>.
+        /// </summary>
+        public IReadOnlyDictionary<string, IReadOnlyDictionary<ModelSlot, string>>? Addons { get; init; }
+
+        /// <summary>Whether an armour copy leaves out the template's addons <see cref="Addons"/> does not name.</summary>
+        public bool DropUnlistedAddons { get; init; }
+
         /// <summary>Whether to copy the recipes that make the template -- crafting and tempering.</summary>
         public bool Recipes { get; init; } = true;
     }
@@ -139,4 +150,11 @@ namespace SKAssets.Authoring
         IReadOnlyList<string> Textures,
         IReadOnlyList<(string Mesh, MeshFinding Finding)> Findings,
         IReadOnlyList<string> Notes);
+
+    /// <summary>One of an armour's addons, as the template has it: what an import can give meshes to.</summary>
+    /// <param name="EditorId">The addon's editor id, which <see cref="AssetImport.Addons"/> is keyed on.</param>
+    /// <param name="Races">The races it dresses: its own and its additional ones, by editor id.</param>
+    /// <param name="MaleModel">Its male body mesh.</param>
+    /// <param name="FemaleModel">Its female body mesh.</param>
+    public sealed record ArmorAddonInfo(string EditorId, IReadOnlyList<string> Races, string? MaleModel, string? FemaleModel);
 }
