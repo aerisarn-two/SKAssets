@@ -417,8 +417,12 @@ namespace SKAssets.Authoring
             // Each file came from its own converter's reading of the FBX; what they mean in the
             // world is compared, since each is correct on its own (CreatureChecks).
             if (skeletonNif is not null && skeletonHavok is not null)
+            {
                 foreach (MeshFinding finding in CreatureChecks.Skeleton(skeletonNif, skeletonHavok))
                     findings.Add((newSkeletonModel!, finding));
+                foreach (MeshFinding finding in CreatureChecks.BlockSizes(NifModel.Load(Path.Combine(meshes, newSkeletonModel!.Replace('\\', Path.DirectorySeparatorChar)), NifXmlDatabase.LoadEmbedded())))
+                    findings.Add((newSkeletonModel!, finding));
+            }
             foreach (var (nif, fbx) in bodyNifs.Where(b => File.Exists(b.Nif) && b.Nif.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)))
             {
                 NifModel worn = NifModel.Load(nif, NifXmlDatabase.LoadEmbedded());
@@ -427,6 +431,7 @@ namespace SKAssets.Authoring
                     foreach (MeshFinding finding in CreatureChecks.Skin(worn, skeletonNif)) findings.Add((relative, finding));
                 foreach (MeshFinding finding in CreatureChecks.Triangles(worn, fbx)) findings.Add((relative, finding));
                 foreach (MeshFinding finding in CreatureChecks.Weights(worn)) findings.Add((relative, finding));
+                foreach (MeshFinding finding in CreatureChecks.BlockSizes(worn)) findings.Add((relative, finding));
             }
 
             // ------------------------------------------------ idle records
@@ -438,6 +443,12 @@ namespace SKAssets.Authoring
                 INpcGetter npc = Resolve<INpcGetter>(request.Npc, nameof(request));
                 var made = Plugin.Npcs.DuplicateInAsNewRecord<Npc, INpcGetter>(npc, id + "Npc");
                 made.Race.SetTo(copy);
+
+                // An actor takes its attacks from its attack race where it names one, and the
+                // template's names the template: the creature would swing by the sabre cat's
+                // reach and damage and ignore its own.
+                if (made.AttackRace.FormKey == race.FormKey) made.AttackRace.SetTo(copy);
+
                 if (!made.WornArmor.IsNull) made.WornArmor.SetTo(copy.Skin.FormKey);
                 if (request.DisplayName is not null) made.Name = request.DisplayName;
                 records.Add(new AuthoredRecord(made.FormKey, nameof(Npc), made.EditorID!, npc.FormKey));
