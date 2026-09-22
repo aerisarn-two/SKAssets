@@ -214,6 +214,11 @@ SkeletonRules.CheckRig(rigBones, skeletonMesh.Nodes);             // 199/204
 Of the three armour meshes in the game that fail the first, one is a Falmer
 helmet weighted to human bones. It loads, and hangs in the air.
 
+**`docs/new-race.md`** lists every record and file a new race needs — a creature, or a
+playable race on top of it — measured on the wolf and the Nord, including the two
+dependencies no FormLink records: movement types named by the graph and sound
+descriptors named by the animations.
+
 **`docs/asset-kinds.md`** is the evidence: the eight roles and their counts, what
 each record type names, how an actor and a prop are assembled across files, and
 the traps — the stale split animation cache, the two skeletons inside every
