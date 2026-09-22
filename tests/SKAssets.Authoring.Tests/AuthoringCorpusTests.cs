@@ -120,6 +120,12 @@ namespace SKAssets.Authoring.Tests
     {
         public const string DataVar = "SKASSETS_SKYRIM_DATA";
 
+        public const string MeshesVar = "SKASSETS_HAVOK_MESHES";
+
+        /// <summary>An extracted meshes folder holding the caches and the actors' Havok files, or null.</summary>
+        public static string? Meshes =>
+            Environment.GetEnvironmentVariable(MeshesVar) is { Length: > 0 } meshes && Directory.Exists(meshes) ? meshes : null;
+
         public static string? Data
         {
             get

@@ -223,6 +223,9 @@ while being named by 19 of its own, and `DA13AfflictedRace` wears the Breton's. 
    animations' events; the footstep set; skin ARMO and ARMA; BPTD; the RACE; the NPCs,
    leveled lists and death items.
 4. `animgen` over the load order, to put the project into the three caches.
+
+`SKAssets.Authoring`'s `ImportCreature` does 1 to 4 from a template creature and FBX
+files for whatever is replaced (`docs/authoring.md` §6).
 5. Check: `SkeletonRules.CheckSkin` and `CheckRig`, HKSK's `ConsistencyReport`.
 
 ## 5. Traps

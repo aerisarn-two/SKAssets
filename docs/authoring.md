@@ -184,10 +184,52 @@ overwrite the import's. An addon not named wears the import's meshes, with a not
 with `DropUnlistedAddons`, is left out, for a piece only some races wear. Naming an addon
 the template does not wear is refused.
 
-## 6. Traps
+## 6. A new creature
+
+A creature is a skeleton, a Havok project and a dozen records (`docs/new-race.md`), and
+the behaviour graph is the part nobody writes from nothing. So a new creature starts as a
+copy of one the game has, under a name of its own, and its parts are replaced from FBX:
+
+```csharp
+CreatureResult direwolf = authoring.ImportCreature(new NewCreature
+{
+    Template = "WolfRace",
+    Name = "Direwolf",                     // MyMod_DirewolfProject, MyMod_DirewolfRace
+    SourceMeshes = extractedMeshes,        // the three caches and the wolf's Havok files
+    Skeleton = "direwolf_skeleton.fbx",    // rig, ragdoll and skeleton.nif
+    Body = new Dictionary<ModelSlot, string> { [ModelSlot.Main] = "direwolf.fbx" },
+    Animations = ["direwolf_clips.fbx"],   // stacks named for the animations they replace
+    Npc = "EncWolf",
+});
+```
+
+- **The Havok files** -- project, character, behaviours, rig and animations -- are copied
+  into a folder beside the template's, at the same depth, so a path the files spell with
+  `..` reaches what it did: 66 of the wolf's 72 animations are copied, and the other six,
+  paired killmoves under `..\SharedKillMoves`, are reached as the wolf reaches them.
+- **The caches** get an entry for the new project with the template's clips and root
+  motion, which is in no Havok file, and the set data and speed table are amended from the
+  load order with the new plugin in it. They are written to the output's `Meshes`, and
+  replace the game's; another creature mod's have to be rebuilt with them (`animgen`).
+- **The skeleton** from FBX becomes the skeleton mesh and the rig through
+  `SKAssets.Export`, written over a copy of the template's rig so what the rig model does
+  not carry comes along. The body part data is copied to name it.
+- **The body** is an armour import into a copy of the template's skin; the skin and its
+  addons are made to dress the new race, since an addon names the races it fits.
+- **The animations** go through `SKAssets.Export`'s clip exchange into the new project:
+  written as the new creature's own files, with their root motion in its cache entry.
+  Converting runs Havok's codec (`mopper`).
+- **Shared on purpose**: the movement types and sound descriptors the graph names by
+  `iState_` constant and by event, since the graph is unchanged and the names still find
+  them (`docs/new-race.md` §1.3–1.4).
+
+Against the game, the wolf cloned as a direwolf opens from the caches written as an actor
+with every behaviour, clip and root motion the wolf has, beside the game's 429 projects; a
+wolf walk taken to FBX and back lands in the direwolf's own animation with its travel.
+
+## 7. Traps
 
 - **Paths in the archives are separated by `/` on Linux** and by `\` in the records.
   Compare the two after normalising, or every lookup misses.
-- **Actors are not an import.** A creature is a skeleton, a Havok project, three caches and
-  a dozen records (`docs/new-race.md`); the kinds here are the records that name one mesh
-  or a few.
+- **A creature's caches replace the game's.** The merged files are one per load order, so
+  a second creature mod's must be rebuilt together with these; `animgen` does it.

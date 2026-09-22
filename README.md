@@ -379,7 +379,9 @@ the masters, and where each FBX goes. Each mesh is converted by NIFBX and checke
 against the record that names it. Its textures come with it: a file the FBX names beside
 it is written as a DDS under `Textures`, and the mesh pointed at it. And it can be put
 into the game: placed in a cell by name or on a worldspace by position, or added to a
-leveled list or a container.
+leveled list or a container. A creature is made from one the game has: its Havok project,
+race, skin and cache entries copied under a new name, with its skeleton, body and
+animations from FBX.
 
 ## What it does not find yet
 

@@ -1,0 +1,153 @@
+using HKFBX.Hkx;
+using HKSK.Model;
+using Mutagen.Bethesda.Skyrim;
+using NIFBX.Conversion;
+using NIFSharp;
+using SKAssets.Export;
+using Xunit;
+
+namespace SKAssets.Authoring.Tests
+{
+    /// <summary>A new creature made from the wolf, against the game and its extracted meshes.</summary>
+    public sealed class CreatureCorpusTests : IDisposable
+    {
+        private readonly string _out = Path.Combine(Path.GetTempPath(), "skassets-creature-" + Guid.NewGuid().ToString("N"));
+
+        public void Dispose()
+        {
+            if (Directory.Exists(_out)) Directory.Delete(_out, recursive: true);
+        }
+
+        /// <summary>
+        /// The wolf, cloned as a direwolf with its own skeleton and body from FBX: the project, its
+        /// files and its cache entries are the direwolf's, the race wears them, the skin dresses the
+        /// new race, and the project opens as an actor from the caches written.
+        /// </summary>
+        [HavokMastersFact]
+        public void AWolfBecomesADirewolf()
+        {
+            string meshes = Game.Meshes!;
+            string wolf = Path.Combine(meshes, "actors", "canine", "character assets wolf");
+            NifXmlDatabase schema = NifXmlDatabase.LoadEmbedded();
+
+            // the wolf's own skeleton and body, taken to FBX as an author would hand them back
+            string skeleton = Path.Combine(_out, "source", "skeleton.fbx");
+            string body = Path.Combine(_out, "source", "body.fbx");
+            Directory.CreateDirectory(Path.GetDirectoryName(skeleton)!);
+            SkeletonExchange.Export(NifModel.Load(Path.Combine(wolf, "skeleton.nif"), schema), HkxSkeletonFile.Read(Path.Combine(wolf, "skeleton.hkx"))).Save(skeleton);
+            new NifToFbx(NifModel.Load(Path.Combine(wolf, "wolf.nif"), schema)).Convert().Save(body);
+
+            CreatureResult made;
+            using (var authoring = PluginAuthoring.Open(Game.Data!, "MyMod.esp", _out))
+            {
+                authoring.Prefix = "MyMod_";
+                made = authoring.ImportCreature(new NewCreature
+                {
+                    Template = "WolfRace", Name = "Direwolf", DisplayName = "Direwolf", SourceMeshes = meshes,
+                    Skeleton = skeleton,
+                    Body = new Dictionary<ModelSlot, string> { [ModelSlot.Main] = body },
+                    Npc = "EncWolf",
+                });
+                authoring.Save();
+            }
+
+            Assert.Equal("MyMod_DirewolfProject", made.Project);
+            Assert.Equal(new CacheAmendment("MyMod_DirewolfProject", Amendment.Unchanged, Amendment.Added, Amendment.Added), made.Caches);
+
+            string folder = Path.Combine(_out, "Meshes", "actors", "MyMod_Direwolf");
+            Assert.True(File.Exists(Path.Combine(folder, "MyMod_DirewolfProject.hkx")));
+            // copied as the character spells them, which is not the disc's case
+            string Under(string name) => Directory.GetDirectories(folder).Single(d => string.Equals(Path.GetFileName(d), name, StringComparison.OrdinalIgnoreCase));
+            // 66 of the wolf's 72: the other six are paired killmoves under ..\SharedKillMoves, which the
+            // direwolf's folder, at the wolf's depth, reaches as the wolf's does
+            Assert.Equal(66, Directory.GetFiles(Under("animations")).Length);
+            Assert.Contains(made.Notes, n => n.StartsWith("6 animations live outside"));
+            Assert.Contains(Directory.GetFiles(Under("character assets wolf")), f => Path.GetFileName(f).Equals("skeleton.hkx", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(made.Findings, f => f.Finding.Severity != Content.Assets.FindingSeverity.Note);
+
+            // the caches written hold the direwolf beside the game's creatures, and open it whole
+            SkyrimCache caches = SkyrimCache.Load(Path.Combine(_out, "Meshes"));
+            ActorProject direwolf = caches.OpenActor("MyMod_DirewolfProject")!;
+            ActorProject original = SkyrimCache.Load(meshes).OpenActor("WolfProject")!;
+            Assert.True(direwolf.HasHavok);
+            Assert.Equal(original.Behaviors.Count, direwolf.Behaviors.Count);
+            Assert.Equal(original.Clips.Count, direwolf.Clips.Count);
+            Assert.Equal(original.Data.Movements!.Movements.Count, direwolf.Data.Movements!.Movements.Count);
+            Assert.NotNull(caches.SetData.Project("MyMod_DirewolfProject"));
+            Assert.NotNull(caches.SpeedData!.Block("MyMod_DirewolfProject"));
+            Assert.Equal(430, caches.AnimationData.Projects.Count);
+
+            using var plugin = SkyrimMod.CreateFromBinaryOverlay(Path.Combine(_out, "MyMod.esp"), SkyrimRelease.SkyrimSE);
+            IRaceGetter race = Assert.Single(plugin.Races);
+            Assert.Equal("MyMod_DirewolfRace", race.EditorID);
+            Assert.Equal(@"actors\MyMod_Direwolf\MyMod_DirewolfProject.hkx", race.BehaviorGraph.Male!.File.GivenPath, ignoreCase: true);
+            Assert.StartsWith(@"actors\MyMod_Direwolf\", race.SkeletalModel!.Male!.File.GivenPath, StringComparison.OrdinalIgnoreCase);
+
+            IArmorGetter skin = plugin.Armors.Single(a => a.FormKey == race.Skin.FormKey);
+            Assert.Equal(race.FormKey, skin.Race.FormKey);
+            Assert.All(plugin.ArmorAddons, aa => Assert.Equal(race.FormKey, aa.Race.FormKey));
+            Assert.Equal(race.FormKey, Assert.Single(plugin.Npcs).Race.FormKey);
+            Assert.Equal(race.SkeletalModel.Male.File.GivenPath, plugin.BodyParts.Single().Model!.File.GivenPath);
+        }
+    }
+
+    /// <summary>A creature's animations from FBX, through Havok's codec.</summary>
+    public sealed class CreatureClipCorpusTests : IDisposable
+    {
+        private readonly string _out = Path.Combine(Path.GetTempPath(), "skassets-creature-clips-" + Guid.NewGuid().ToString("N"));
+
+        public void Dispose()
+        {
+            if (Directory.Exists(_out)) Directory.Delete(_out, recursive: true);
+        }
+
+        /// <summary>
+        /// A travelling wolf clip, taken to FBX against the wolf's rig and given to the direwolf: it
+        /// is written into the direwolf's own animation and root motion, not the wolf's.
+        /// </summary>
+        [HavokMastersFact]
+        public void ADirewolfTakesAnAnimationFromFbx()
+        {
+            string meshes = Game.Meshes!;
+            string wolf = Path.Combine(meshes, "actors", "canine", "character assets wolf");
+            NifXmlDatabase schema = NifXmlDatabase.LoadEmbedded();
+
+            ActorProject original = SkyrimCache.Load(meshes).OpenActor("WolfProject")!;
+            AnimationSlot walk = original.Animations.First(a => a.Motion is { Travel: > 50f });
+
+            var rig = HkxSkeletonFile.Read(Path.Combine(wolf, "skeleton.hkx"));
+            var scene = SkeletonExchange.Export(NifModel.Load(Path.Combine(wolf, "skeleton.nif"), schema), rig);
+            var report = ClipExchange.AddClips(scene, rig.Rig, original, [walk]);
+            Assert.Single(report.Stacks);
+
+            string clips = Path.Combine(_out, "source", "clips.fbx");
+            Directory.CreateDirectory(Path.GetDirectoryName(clips)!);
+            scene.Save(clips);
+
+            CreatureResult made;
+            using (var authoring = PluginAuthoring.Open(Game.Data!, "MyMod.esp", _out))
+                made = authoring.ImportCreature(new NewCreature
+                {
+                    Template = "WolfRace", Name = "Direwolf", SourceMeshes = meshes, Animations = [clips],
+                });
+
+            ImportedClip clip = Assert.Single(made.Clips!.Clips);
+            Assert.Empty(made.Clips.Failed);
+            Assert.Equal(walk.Index, clip.CacheIndex);
+            Assert.StartsWith(Path.Combine(_out, "Meshes"), clip.Path);
+
+            ActorProject direwolf = SkyrimCache.Load(Path.Combine(_out, "Meshes")).OpenActor("DirewolfProject")!;
+            Assert.Equal(walk.Motion!.Travel, direwolf.Animations[walk.Index].Motion!.Travel, 0);
+        }
+    }
+
+    /// <summary>A fact that needs both the game's Data folder and the extracted meshes.</summary>
+    public sealed class HavokMastersFactAttribute : FactAttribute
+    {
+        public HavokMastersFactAttribute()
+        {
+            if (Game.Data is null) Skip = $"set {Game.DataVar} to the game's Data folder to run this";
+            else if (Game.Meshes is null) Skip = $"set {Game.MeshesVar} to an extracted meshes folder to run this";
+        }
+    }
+}
