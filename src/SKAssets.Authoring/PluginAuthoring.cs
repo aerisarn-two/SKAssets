@@ -265,6 +265,15 @@ namespace SKAssets.Authoring
                 var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var worn = new List<IFormLinkGetter<IArmorAddonGetter>>();
 
+                // An addon's own meshes are numbered so they cannot overwrite the import's or
+                // each other's. One addon wearing everything there is to wear has nothing to be
+                // told apart from, and numbering it would leave a creature in 'CatSkin_0.nif',
+                // which reads like half a weight slider.
+                int dressed = request.Addons is null ? 0 : template.Armature
+                    .Select(link => owner._cache.TryResolve<IArmorAddonGetter>(link.FormKey, out var a) ? a.EditorID : null)
+                    .Count(id => id is not null && request.Addons.ContainsKey(id));
+                bool alone = dressed == 1 && (request.DropUnlistedAddons || template.Armature.Count == 1);
+
                 for (int i = 0; i < template.Armature.Count; i++)
                 {
                     if (!owner._cache.TryResolve<IArmorAddonGetter>(template.Armature[i].FormKey, out var addon)) continue;
@@ -280,7 +289,9 @@ namespace SKAssets.Authoring
 
                     // An addon with meshes of its own names them after itself, so they do not
                     // overwrite the import's.
-                    (_fbx, _stem) = own is null ? (request.Fbx, _id) : (Merged(own), $"{_id}_{i}");
+                    (_fbx, _stem) = own is null ? (request.Fbx, _id)
+                        : alone ? (Merged(own), _id)
+                        : (Merged(own), $"{_id}_{i}");
                     Dress(aa, addon);
                     (_fbx, _stem) = (request.Fbx, _id);
 
