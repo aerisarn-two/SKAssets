@@ -51,11 +51,34 @@ namespace SKAssets.Authoring
         /// </summary>
         public IReadOnlyList<string> Animations { get; init; } = [];
 
+        /// <summary>
+        /// Whether the creature gets movement types of its own rather than sharing the template's.
+        /// The behaviour graph names them by its <c>iState_&lt;name&gt;</c> constants, so the constants
+        /// are renamed in the copied graph and the records copied under the new names -- which is
+        /// what lets its speeds differ. Implied by <see cref="Speeds"/>.
+        /// </summary>
+        public bool OwnMovementTypes { get; init; }
+
+        /// <summary>
+        /// Speeds for the creature's own movement types, by the template's movement type name as the
+        /// graph spells it (<c>WolfDefault</c>); one not given keeps the template's speeds.
+        /// </summary>
+        public IReadOnlyDictionary<string, MovementSpeeds>? Speeds { get; init; }
+
         /// <summary>An NPC to copy as the creature's first, by editor id: <c>EncWolf</c>.</summary>
         public string? Npc { get; init; }
 
         /// <summary>Put before every name written; the plugin's prefix when null.</summary>
         public string? Prefix { get; init; }
+    }
+
+    /// <summary>A movement type's eight speeds, in game units per second.</summary>
+    public sealed record MovementSpeeds(
+        float ForwardWalk, float ForwardRun, float BackWalk, float BackRun,
+        float LeftWalk, float LeftRun, float RightWalk, float RightRun)
+    {
+        /// <summary>The same walk and run in every direction.</summary>
+        public static MovementSpeeds Uniform(float walk, float run) => new(walk, run, walk, run, walk, run, walk, run);
     }
 
     /// <summary>What making a creature wrote.</summary>
@@ -212,6 +235,41 @@ namespace SKAssets.Authoring
                 }
             }
 
+            // ------------------------------------------------ movement types of its own
+
+            var ownTypes = new Dictionary<string, MovementType>(StringComparer.OrdinalIgnoreCase);
+            if (request.OwnMovementTypes || request.Speeds is { Count: > 0 })
+            {
+                var byName = new Dictionary<string, IMovementTypeGetter>(StringComparer.OrdinalIgnoreCase);
+                foreach (var movt in _cache.PriorityOrder.WinningOverrides<IMovementTypeGetter>())
+                    if ((movt.Name ?? movt.EditorID) is { Length: > 0 } name) byName.TryAdd(name, movt);
+
+                // The engine finds a movement type through the constants of the creature's root
+                // graph; a shared graph beside it declares every species' (the quadruped graph 17),
+                // so only the root's are the creature's. They are renamed in every copied graph,
+                // since the graphs a project joins share variables by name.
+                var walk = HKSK.Behavior.ProjectWalk.Of(projectFile);
+                var own = HKSK.Behavior.BehaviorRoot.Of(projectFile) is { } root
+                    ? HKSK.Behavior.StateConstants.Of(walk, root).Keys.Select(k => k["iState_".Length..]).Where(byName.ContainsKey).ToList()
+                    : [];
+
+                var renamed = RenameStateConstants(target, entry.Block.Files, own, id);
+                foreach ((string old, string renamedTo) in renamed)
+                {
+                    var made = Plugin.MovementTypes.DuplicateInAsNewRecord<MovementType, IMovementTypeGetter>(byName[old], renamedTo);
+                    made.Name = renamedTo;
+                    if (request.Speeds?.GetValueOrDefault(old) is { } speeds)
+                        (made.ForwardWalk, made.ForwardRun, made.BackWalk, made.BackRun, made.LeftWalk, made.LeftRun, made.RightWalk, made.RightRun) =
+                            (speeds.ForwardWalk, speeds.ForwardRun, speeds.BackWalk, speeds.BackRun, speeds.LeftWalk, speeds.LeftRun, speeds.RightWalk, speeds.RightRun);
+                    ownTypes[old] = made;
+                    records.Add(new AuthoredRecord(made.FormKey, nameof(MovementType), made.EditorID!, byName[old].FormKey));
+                }
+
+                if (request.Speeds?.Keys.FirstOrDefault(k => !renamed.ContainsKey(k)) is { } stray)
+                    throw new ArgumentException($"the template's graph names no movement type '{stray}'", nameof(request));
+                notes.Add($"{renamed.Count} movement types of its own: {string.Join(", ", renamed.Values)}");
+            }
+
             // ------------------------------------------------ the records
 
             Race copy = Plugin.Races.DuplicateInAsNewRecord<Race, IRaceGetter>(race, id + "Race");
@@ -222,6 +280,13 @@ namespace SKAssets.Authoring
             copy.BehaviorGraph = new GenderedItem<Model?>(new Model { File = behavior }, new Model { File = behavior });
             if (newSkeletonModel is not null)
                 copy.SkeletalModel = new GenderedItem<SimpleModel?>(new SimpleModel { File = newSkeletonModel }, new SimpleModel { File = newSkeletonModel });
+
+            // A race's default movement types follow the graph's to the creature's own copies.
+            foreach (var link in new[] { copy.BaseMovementDefaultWalk, copy.BaseMovementDefaultRun, copy.BaseMovementDefaultSwim,
+                                         copy.BaseMovementDefaultFly, copy.BaseMovementDefaultSneak, copy.BaseMovementDefaultSprint })
+                if (!link.IsNull && _cache.TryResolve<IMovementTypeGetter>(link.FormKey, out var movement)
+                    && ownTypes.GetValueOrDefault(movement.Name ?? movement.EditorID ?? "") is { } own)
+                    link.SetTo(own);
 
             if (!race.Skin.IsNull && _cache.TryResolve<IArmorGetter>(race.Skin.FormKey, out var skin))
             {
@@ -322,6 +387,66 @@ namespace SKAssets.Authoring
             _caches = caches;
 
             return new CreatureResult(records[0], records, project, [.. files.Distinct()], amended, clips, findings, notes);
+        }
+
+        /// <summary>
+        /// Renames, in the copied behaviour files, every <c>iState_&lt;name&gt;</c> constant whose name
+        /// is a movement type's -- in the variable names, and wherever an expression or a transition's
+        /// condition spells it -- to one of the creature's own.
+        /// </summary>
+        /// <returns>The movement type names renamed, old to new.</returns>
+        private static Dictionary<string, string> RenameStateConstants(
+            string folder, IEnumerable<string> files, IEnumerable<string> movementTypes, string id)
+        {
+            var known = new HashSet<string>(movementTypes, StringComparer.OrdinalIgnoreCase);
+            var renamed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            const string Prefix = "iState_";
+
+            foreach (string stored in files)
+            {
+                if (stored.Replace('/', '\\').StartsWith(@"..\", StringComparison.Ordinal)) continue;
+                if (HavokPath.Resolve(folder, stored) is not { } path) continue;
+
+                HavokFile file;
+                try { file = HavokFile.Load(path); }
+                catch (Exception e) when (e is not OutOfMemoryException) { continue; }
+
+                bool changed = false;
+                foreach (var strings in file.All<HKX2.hkbBehaviorGraphStringData>())
+                    for (int i = 0; i < strings.m_variableNames.Count; i++)
+                    {
+                        string name = strings.m_variableNames[i];
+                        if (!name.StartsWith(Prefix, StringComparison.Ordinal)) continue;
+
+                        string movement = name[Prefix.Length..];
+                        if (!known.Contains(movement)) continue;
+
+                        if (!renamed.TryGetValue(movement, out string? to)) renamed[movement] = to = $"{id}_{movement}";
+                        strings.m_variableNames[i] = Prefix + to;
+                        changed = true;
+                    }
+
+                foreach (var expression in file.All<HKX2.hkbExpressionData>())
+                    changed |= Rewrite(expression.m_expression, e => expression.m_expression = e);
+                foreach (var condition in file.All<HKX2.hkbExpressionCondition>())
+                    changed |= Rewrite(condition.m_expression, e => condition.m_expression = e);
+
+                if (changed) file.Save(path);
+            }
+
+            return renamed;
+
+            bool Rewrite(string? text, Action<string> set)
+            {
+                if (string.IsNullOrEmpty(text)) return false;
+                string result = text;
+                foreach ((string from, string to) in renamed)
+                    result = System.Text.RegularExpressions.Regex.Replace(
+                        result, $@"\b{Prefix}{System.Text.RegularExpressions.Regex.Escape(from)}\b", Prefix + to);
+                if (result == text) return false;
+                set(result);
+                return true;
+            }
         }
 
         /// <summary>

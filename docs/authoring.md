@@ -219,9 +219,16 @@ CreatureResult direwolf = authoring.ImportCreature(new NewCreature
 - **The animations** go through `SKAssets.Export`'s clip exchange into the new project:
   written as the new creature's own files, uncompressed, with their root motion in its
   cache entry. No Havok codec runs to write them, so nothing needs Wine off Windows.
-- **Shared on purpose**: the movement types and sound descriptors the graph names by
-  `iState_` constant and by event, since the graph is unchanged and the names still find
-  them (`docs/new-race.md` §1.3–1.4).
+- **Movement types of its own**, with `OwnMovementTypes` or `Speeds`. The engine finds a
+  creature's movement types by the `iState_<name>` constants of its **root** graph, so
+  those are renamed -- in every copied graph, since graphs joined by reference share
+  variables by name, and wherever an expression or a transition's condition spells them --
+  and the records copied under the new names with the speeds given. Only the root's: a
+  shared graph declares every species' (the quadruped graph 17), where the wolf's own root
+  declares 2. The race's default movement types follow, and the speed table is written
+  from the new records: a direwolf given an 800 run sweeps to 1,600.
+- **Shared on purpose**: the sound descriptors the animations name by editor id
+  (`docs/new-race.md` §1.3), and, without the option above, the movement types.
 
 Against the game, the wolf cloned as a direwolf opens from the caches written as an actor
 with every behaviour, clip and root motion the wolf has, beside the game's 429 projects; a

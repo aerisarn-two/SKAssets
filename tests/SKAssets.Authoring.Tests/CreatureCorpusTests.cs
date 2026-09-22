@@ -91,6 +91,55 @@ namespace SKAssets.Authoring.Tests
         }
     }
 
+    /// <summary>A creature with speeds of its own.</summary>
+    public sealed class CreatureSpeedCorpusTests : IDisposable
+    {
+        private readonly string _out = Path.Combine(Path.GetTempPath(), "skassets-creature-speeds-" + Guid.NewGuid().ToString("N"));
+
+        public void Dispose()
+        {
+            if (Directory.Exists(_out)) Directory.Delete(_out, recursive: true);
+        }
+
+        /// <summary>
+        /// The wolf's root graph names two movement types; the direwolf gets its own copies, renamed
+        /// in its graph, with a faster run -- and the speed table written for it sweeps to twice that
+        /// run, which is the speed read from the new record through the renamed constant.
+        /// </summary>
+        [HavokMastersFact]
+        public void ADirewolfRunsFasterThanTheWolf()
+        {
+            CreatureResult made;
+            using (var authoring = PluginAuthoring.Open(Game.Data!, "MyMod.esp", _out))
+            {
+                made = authoring.ImportCreature(new NewCreature
+                {
+                    Template = "WolfRace", Name = "Direwolf", SourceMeshes = Game.Meshes!,
+                    Speeds = new Dictionary<string, MovementSpeeds> { ["WolfDefault"] = MovementSpeeds.Uniform(90f, 800f) },
+                });
+                authoring.Save();
+            }
+
+            using var plugin = SkyrimMod.CreateFromBinaryOverlay(Path.Combine(_out, "MyMod.esp"), SkyrimRelease.SkyrimSE);
+            Assert.Equal(["Direwolf_WolfDefault", "Direwolf_WolfRun"], plugin.MovementTypes.Select(m => m.Name).Order());
+            Assert.Equal(800f, plugin.MovementTypes.Single(m => m.Name == "Direwolf_WolfDefault").ForwardRun);
+
+            string project = Directory.EnumerateFiles(Path.Combine(_out, "Meshes"), "DirewolfProject.hkx", SearchOption.AllDirectories).Single();
+            var walk = HKSK.Behavior.ProjectWalk.Of(project);
+            Assert.True(HKSK.Behavior.BehaviorRoot.Of(project) is { } root);
+            var constants = HKSK.Behavior.StateConstants.Of(walk, root);
+            Assert.Contains("iState_Direwolf_WolfDefault", constants.Keys);
+            Assert.DoesNotContain(constants.Keys, k => k is "iState_WolfDefault" or "iState_WolfRun");
+
+            var table = SkyrimCache.Load(Path.Combine(_out, "Meshes")).SpeedData!;
+            float reach = table.Block("DirewolfProject")!.Entries.SelectMany(e => e.Records).Max(r => r.Points[^1].X);
+            float wolf = table.Block("WolfProject")!.Entries.SelectMany(e => e.Records).Max(r => r.Points[^1].X);
+            Assert.True(reach >= 1600f, $"the direwolf's sweep stops at {reach}");
+            Assert.True(reach > wolf, $"the direwolf's sweep ({reach}) reaches no further than the wolf's ({wolf})");
+            Assert.Contains(made.Notes, n => n.StartsWith("2 movement types of its own"));
+        }
+    }
+
     /// <summary>A creature's animations from FBX, through Havok's codec.</summary>
     public sealed class CreatureClipCorpusTests : IDisposable
     {
