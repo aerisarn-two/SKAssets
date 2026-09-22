@@ -38,7 +38,7 @@
       names, the skeleton it rides, and the animation cache that has to agree.
     -->
     <PackageReference Include="NIFBX" Version="1.1.0" />
-    <PackageReference Include="HKSK" Version="2.7.0" />
+    <PackageReference Include="HKSK" Version="2.8.0" />
   </ItemGroup>
 
   <ItemGroup>
