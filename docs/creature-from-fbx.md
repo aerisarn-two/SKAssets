@@ -22,8 +22,8 @@ graph is the part nobody writes from nothing. So there are two ways to get one:
 | --- | --- | --- |
 | start from | a template race the game has | the animations you have, with roles |
 | the graph | the template's, copied and renamed | written from templates per plan and module |
-| the animations | replace the template's by name; one that matches none is listed but no clip plays it, since the graph is the template's | any set at or above the floor (seven) |
-| the skeleton | any, if the rig is exchanged whole | any |
+| the animations | replace the template's by name; one that matches none is listed but no clip plays it until the graph is amended, since the graph is the template's | any set at or above the floor (seven) |
+| the skeleton | any: a rig with the template's bones is written over it, a rig of its own is built from it and every bone the copied graph named by index is found again by name (`RigRemap`) | any |
 | fits when | the new creature *is* a wolf, a draugr, a chicken with a new skin and re-animated clips | the creature's animation set matches no shipped creature: fewer clips, more attacks, a different plan |
 | costs | nothing the template did not already pay | the graph template writer, and three record fields written from the plan instead of copied (§6); everything else -- the skeleton, the mesh to NIF with its textures, the records, the sounds, the caches -- is `ImportCreature`'s code as it stands |
 
@@ -76,6 +76,28 @@ What the assembly will ask of the skeleton, all by bone name and all optional
 | head tracking | the spine-to-head chain, three to five bones | limit 65°, gains 0.075 / 0.05 |
 | foot IK | hip, knee, ankle per leg, and the knee axis | ankle heights read from the rest pose; four legs set `isQuadrupedNarrow` |
 | partial-body casting | the bones the upper body starts at | a bone mask, inline; no character property |
+
+### 2.1 A rig of its own
+
+A creature whose FBX carries the template's bones and bodies is written over the
+template's `skeleton.hkx` by name, which keeps every value neither converter models.
+A creature with a rig of its own -- another bone count, another ragdoll -- cannot be:
+the counts are what the skeleton mappers, the ragdoll instance and every index in the
+file are built over. `HkxSkeletonBuilder` rebuilds the file around the new rig from the
+template's objects as prototypes, and `RigRemap` rebinds what the copied character and
+behaviours name by index, by bone name:
+
+| what names a bone | in | mapped |
+| --- | --- | --- |
+| the foot IK's hip, knee and ankle per leg | the character file | by name; the knee axis and the ankle heights re-derived from the new rest pose |
+| the mirror table | the character file | rebuilt from the new rig's own left/right spellings |
+| a look-at's bones | the shared graph | by name, dropping what the new rig has not got; each forward axis re-derived |
+| the bones a get-up keyframes, a powered ragdoll drives, a contact listener watches | the graphs | **ragdoll** bone indices, not rig ones |
+| a get-up's and a pose matcher's three bones, a bone-switch's weights | the graphs | by name; a bone with no counterpart falls back to the root and is reported |
+| a body part's `PartNode` and VATS target | the BPTD | by the same map |
+
+The map from the template's names to the new rig's is `NewCreature.BoneMap`; bones
+called the same need no entry.
 
 ## 3. The body
 
@@ -217,7 +239,7 @@ Built, in `ImportCreature`, and almost all of it carries over unchanged. What
 | step in `ImportCreature` | today | on the assembly route |
 | --- | --- | --- |
 | the Havok files | the template's project, character, behaviours and animations copied beside it | **replaced**: `BehaviorAssembler.Assemble` writes them; the rig still comes from the skeleton FBX as below |
-| the skeleton | FBX → `skeleton.nif` (`SkeletonExchange.ImportMesh`) and the rig with its ragdoll (`ImportHavok`, `HkxSkeletonFile.Write`), checked by `MeshRules` | same |
+| the skeleton | FBX → `skeleton.nif` (`SkeletonExchange.ImportMesh`) and the rig with its ragdoll (`ImportHavok`; `HkxSkeletonFile.Write` when the FBX has the template's bones and bodies, `HkxSkeletonBuilder.Write` when it has its own), checked by `MeshRules` and by `CreatureChecks` against each other | same |
 | movement types | the template's `iState_` constants renamed in every copied graph and its `MOVT`s copied under the new names with the speeds given | **changed**: one `MOVT` per `plan.Movements` entry, `MNAM` the name, the eight speeds as the plan read them off the clips, the turn rates by family, thresholds `FLT_MAX`; no renaming, since the graph was written with the names, and no speeds to give |
 | the race | `RACE` duplicated; skeleton, project and movement defaults repointed | **changed in one field**: `Attacks` written from the plan's attack events instead of copied |
 | the body | the armour import (§3): mesh to NIF, textures to DDS, ARMO and ARMA copied and re-raced | same |
@@ -225,7 +247,7 @@ Built, in `ImportCreature`, and almost all of it carries over unchanged. What
 | sounds | the footstep set copied onto the body; per event given, footstep, impact set, impact and sound copied and the files placed under `Sound\FX`; an event the set has no footstep for is refused | **changed**: the kin's set knows the kin's events (`NPCWolfBark`), not this creature's, so an event the triggers carry and the set lacks gets a footstep, impact set, impact and sound **added**, tagged with the event, instead of being refused |
 | the NPC | copied, re-raced, re-skinned | same |
 | the caches | the template's entry copied, the clips imported by `ClipExchange.ImportClips`, `CacheGeneration.Amend`, save | **changed**: the entry and the clips are the assembly's (§4); `Amend` and save as today |
-| idle records | none (the template's idle trees serve, conditioned on the template's race) | **new**: one `IDLE` per `idle*Start` event the assembly declared, **linked into** a copy of the kin's non-combat idle root re-conditioned on the new race -- an idle record that hangs off no root's parent-and-sibling chain is never picked; and the kin's kill-move (`KillMove<Kin>Root`) and camera-path idles, which test the *victim's* race, copied and re-conditioned, or the creature is never kill-moved |
+| idle records | **the template's, copied onto the new behaviour** -- an idle serves the actors whose behaviour is the file it names, and a copied graph is a different file, so without copies the creature never receives `moveStart` (below) | **new**: one `IDLE` per `idle*Start` event the assembly declared, **linked into** a copy of the kin's non-combat idle root re-conditioned on the new race -- an idle record that hangs off no root's parent-and-sibling chain is never picked; and the kin's kill-move (`KillMove<Kin>Root`) and camera-path idles, which test the *victim's* race, copied and re-conditioned, or the creature is never kill-moved |
 
 So the new code is the graph template writer in HKSK and, here, three substitutions
 in a sibling of `ImportCreature`. The **kin** race is the shipped creature whose
@@ -307,6 +329,12 @@ cache rows stay, under the old name, beside the new.
 Before:
 
 - `SkeletonRules.CheckRig`, `SkeletonRules.CheckSkin` (SKAssets);
+- `CreatureChecks`, which `ImportCreature` runs and reports as findings: **the files
+  against each other**, since each converter reads the FBX its own way and each file
+  is correct on its own. The skeleton NIF's bones against the Havok rig's, the skin's
+  bind pose against the skeleton's bones, the skin's triangles against the FBX's, and
+  every vertex weighted. All four were measured on the cat and three of them failed:
+  see the traps below;
 - HKSK `ConsistencyReport` over the new project: every clip's cache index is its
   animation's position, speed and crops agree, every generator is cached;
 - the census reading of the assembled project (`ZzCreatureCensus` in HKSK's tests)
@@ -354,3 +382,23 @@ each failure hides the next:
 - **A kill-move victim needs the killer's half too**, in the humanoid graph, and a
   paired animation authored for both rigs; a new rig cannot borrow the wolf's.
 - **The paths in the archives use `/`** and the records `\`; compare normalised.
+- **An idle record serves the behaviour file it names.** The sabre cat's 49 name
+  `Meshes\Actors\SabreCat\Behaviors\SabreCatBehavior.hkx`, and they are how the AI's
+  actions reach the graph at all: `moveStart`, the turns, `swimStart`, `staggerStart`,
+  `recoilStart`, `bleedOutStart`, sitting, lying down, dying. A copy of the graph under
+  another folder is not that file, so a creature without copies of them stands where it
+  is placed and never takes a step. `ImportCreature` copies each one, keeping its place
+  in its tree -- an idle that hangs off no root's parent-and-sibling chain is never
+  picked -- and se-cmd's `retarget` does the same.
+- **Blender writes its unit scale onto the root node.** Its exporter multiplies every
+  root's transform by `100 * scale_length`, and by a flat 100 with no unit system.
+  HKFBX reads a root's bones and ignores its scale; NIFBX applies it. So the
+  `skeleton.hkx` and every clip come out right and the `skeleton.nif` and the skin 100
+  times too large, with no error anywhere. Export from a metric scene of scale length
+  0.01 -- one Blender unit, one game unit -- and the factor is 1 both ways.
+- **A vertex shared across a UV seam is several vertices in a NIF**, and the weights
+  have to reach all of them. The converter used to give them to one copy; the others
+  are moved by nothing and drawn at the origin, which tears the skin open along every
+  seam while every triangle is present and the bind pose is exact (NIFBX, fixed).
+  Blender also leaves weights unnormalised and unlimited: limit each vertex to four
+  influences and normalise before exporting.
