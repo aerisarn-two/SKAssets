@@ -24,7 +24,7 @@ nothing -- so there are two ways to get one:
 | the animations | must replace the template's by name, one for one | any set at or above the floor (seven) |
 | the skeleton | any, if the rig is exchanged whole | any |
 | fits when | the new creature *is* a wolf, a draugr, a chicken with a new skin and re-animated clips | the creature's animation set matches no shipped creature: fewer clips, more attacks, a different plan |
-| costs | nothing the template did not already pay | the plugin side has to be authored against the names the assembly reports |
+| costs | nothing the template did not already pay | the graph template writer, and three record fields written from the plan instead of copied (§6); everything else -- the skeleton, the mesh to NIF with its textures, the records, the sounds, the caches -- is `ImportCreature`'s code as it stands |
 
 The first route is `docs/authoring.md` §6 and is not repeated here beyond where
 the two share a step. The rest of this document is the second route, end to end,
@@ -74,11 +74,16 @@ What the assembly will ask of the skeleton, all by bone name and all optional
 
 ## 3. The body
 
-Built. The body FBX goes through the armour import into a skin: an ARMO with slot
-Body, its ARMA naming the race, the `WorldModel` the mesh, textures to DDS beside
-it. The BPTD is copied from the kin race (§6) because its model names bones, and
-must name bones this skeleton has. The footstep set hangs off the addon, and it is
-where the creature's sounds will live.
+Built, and the same code on both routes. The body FBX goes through the armour
+import (`PluginAuthoring.Import` with `AuthoredKind.Armor`, the kin's skin as the
+template): NIFBX converts the mesh to a NIF under the creature's mesh folder, the
+textures the FBX names are written as DDS beside it and the mesh pointed at them,
+the mesh is checked against the record that names it (`MeshRules`), and the records
+follow -- an ARMO with slot Body copied from the kin's skin, one ARMA per addon
+copied and made to name the new race, the `WorldModel` the new mesh. The BPTD is
+copied from the kin because its model names bones, and must name bones this
+skeleton has. The footstep set hangs off the addon, and it is where the creature's
+sounds will live (§6).
 
 ## 4. The animations, with roles
 
@@ -185,10 +190,26 @@ the sound events the triggers carry.
 
 ## 6. The plugin
 
-Built for the copy route; the assembly route needs the same records, and
-`SKAssets.Authoring` writes them the same way from a **kin** race -- the shipped
-creature whose non-graph records are borrowed. Every record `docs/new-race.md` §1
-lists, and where each comes from:
+Built, in `ImportCreature`, and almost all of it carries over unchanged. What
+`ImportCreature` does today, step by step, and what the assembly route changes:
+
+| step in `ImportCreature` | today | on the assembly route |
+| --- | --- | --- |
+| the Havok files | the template's project, character, behaviours and animations copied beside it | **replaced**: `BehaviorAssembler.Assemble` writes them; the rig still comes from the skeleton FBX as below |
+| the skeleton | FBX → `skeleton.nif` (`SkeletonExchange.ImportMesh`) and the rig with its ragdoll (`ImportHavok`, `HkxSkeletonFile.Write`), checked by `MeshRules` | same |
+| movement types | the template's `iState_` constants renamed in every copied graph and its `MOVT`s copied under the new names with the speeds given | **changed**: one `MOVT` per `plan.IStates` key, `MNAM` the suffix, speeds from the spec; no renaming, since the graph was written with the names |
+| the race | `RACE` duplicated; skeleton, project and movement defaults repointed | **changed in one field**: `Attacks` written from the plan's attack events instead of copied |
+| the body | the armour import (§3): mesh to NIF, textures to DDS, ARMO and ARMA copied and re-raced | same |
+| the body part data | copied when the skeleton is replaced | same |
+| sounds | the footstep set copied onto the body; per event given, footstep, impact set, impact and sound copied and the files placed under `Sound\FX` | same, the events now checked against the plan's triggers as well as the set |
+| the NPC | copied, re-raced, re-skinned | same |
+| the caches | the template's entry copied, the clips imported by `ClipExchange.ImportClips`, `CacheGeneration.Amend`, save | **changed**: the entry is the assembly's, the clips are already in it; `Amend` and save as today |
+| idle records | none (the template's idle trees serve, conditioned on the template's race) | **new**: one `IDLE` per `idle*Start` event the assembly declared, plus the kin's non-combat root re-conditioned on the new race |
+
+So the new code is the graph template writer in HKSK and, here, three substitutions
+in a sibling of `ImportCreature`. The **kin** race is the shipped creature whose
+non-graph records are borrowed. Every record `docs/new-race.md` §1 lists, and
+where each comes from:
 
 | record | from the kin | from the assembly | from you |
 | --- | --- | --- | --- |
