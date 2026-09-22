@@ -275,6 +275,7 @@ namespace SKAssets.Authoring
             // The skeleton mesh sits beside the rig; the race names it, from Meshes, in the
             // record's own case, which the disc need not share.
             string? newSkeletonModel = null;
+            string? templateSkeletonNif = null;
             bool rigReplaced = false;
             NifModel? skeletonNif = null;
             SkeletonFile? skeletonHavok = null;
@@ -291,6 +292,7 @@ namespace SKAssets.Authoring
                     string inFolder = fromMeshes[under.Length..];
                     Copy(path, inFolder);
                     newSkeletonModel = Path.Combine(folder, inFolder).Replace('/', '\\');
+                    templateSkeletonNif = path;
                 }
                 else notes.Add("the template's skeleton mesh is not beside its project, and the race keeps it");
             }
@@ -486,6 +488,18 @@ namespace SKAssets.Authoring
             // world is compared, since each is correct on its own (CreatureChecks).
             if (skeletonNif is not null && skeletonHavok is not null)
             {
+                // A skeleton rebuilt from an FBX has the bones and none of what the game reads
+                // off the root beside them, which the template has and can lend.
+                if (templateSkeletonNif is not null)
+                {
+                    var db = NifXmlDatabase.LoadEmbedded();
+                    var worn = bodyNifs.Where(b => File.Exists(b.Nif) && b.Nif.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
+                        .Select(b => NifModel.Load(b.Nif, db)).ToList();
+                    foreach (string note in SkeletonExtras.Carry(skeletonNif, NifModel.Load(templateSkeletonNif, db), request.BoneMap, worn))
+                        notes.Add($"skeleton {note}");
+                    skeletonNif.Save(Path.Combine(meshes, newSkeletonModel!.Replace('\\', Path.DirectorySeparatorChar)));
+                }
+
                 foreach (MeshFinding finding in CreatureChecks.Skeleton(skeletonNif, skeletonHavok))
                     findings.Add((newSkeletonModel!, finding));
                 foreach (MeshFinding finding in CreatureChecks.BlockSizes(NifModel.Load(Path.Combine(meshes, newSkeletonModel!.Replace('\\', Path.DirectorySeparatorChar)), NifXmlDatabase.LoadEmbedded())))
