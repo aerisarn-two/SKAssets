@@ -189,6 +189,9 @@ namespace SKAssets.Authoring
             /// <summary>The FBX slots being written, and the name their meshes take: the request's, or one addon's.</summary>
             private IReadOnlyDictionary<ModelSlot, string> _fbx = request.Fbx;
             private string _stem = (request.Prefix ?? owner.Prefix) + request.EditorId;
+
+            /// <summary>The slot the mesh being converted is worn in, while an addon is dressed.</summary>
+            private int? _bodyPart;
             private readonly List<AuthoredRecord> _records = [];
             private readonly List<string> _meshes = [];
             private readonly List<string> _textures = [];
@@ -449,6 +452,13 @@ namespace SKAssets.Authoring
             /// <summary>An armour addon's body meshes, in the weights and sexes the template's come in.</summary>
             private void Dress(ArmorAddon aa, IArmorAddonGetter template)
             {
+                // The slot the addon wears, which the mesh's partitions have to name. Skyrim's
+                // slots are 30 to 61 and the flags are a bit each from 30, so the lowest bit set
+                // is the slot; an addon wearing several is worn as the first of them.
+                _bodyPart = aa.BodyTemplate?.FirstPersonFlags is { } worn && (uint)worn != 0
+                    ? 30 + System.Numerics.BitOperations.TrailingZeroCount((uint)worn)
+                    : null;
+
                 bool weighted = template.WorldModel?.Male?.File.GivenPath.EndsWith("_1.nif", StringComparison.OrdinalIgnoreCase) == true;
                 if (weighted && !_fbx.ContainsKey(ModelSlot.LightWeight))
                     _notes.Add("no light-weight mesh: both body weights are the main mesh");
@@ -467,6 +477,8 @@ namespace SKAssets.Authoring
                     aa.FirstPersonModel = new GenderedItem<Model?>(first, firstFemale);
                 }
                 else if (template.FirstPersonModel?.Male is not null) _notes.Add("no first-person mesh: the first-person view wears the template's");
+
+                _bodyPart = null;
             }
 
             /// <summary>
@@ -501,7 +513,7 @@ namespace SKAssets.Authoring
                 {
                     ImportedMesh mesh = owner._meshes.Import(new MeshTarget(
                         _fbx[slot], target, owner.OutputFolder,
-                        request.TextureFolder ?? request.MeshFolder, request.Prefix ?? owner.Prefix));
+                        request.TextureFolder ?? request.MeshFolder, request.Prefix ?? owner.Prefix, _bodyPart));
                     _converted[relative] = target;
                     _meshes.Add(Path.Combine("Meshes", relative).Replace('\\', '/'));
 

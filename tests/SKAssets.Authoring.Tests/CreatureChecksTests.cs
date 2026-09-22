@@ -64,6 +64,38 @@ namespace SKAssets.Authoring.Tests
         }
 
         /// <summary>
+        /// A worn mesh names the slot it is worn in, in every partition; a converter that does
+        /// not know the slot writes 0, which the game reads as a biped object out of range.
+        /// </summary>
+        [HavokMastersFact]
+        public void APartitionNamingNoSlotIsReported()
+        {
+            NifModel body = NifModel.Load(
+                Path.Combine(Game.Meshes!, "actors", "character", "character assets", "malebody_1.nif"), Db);
+
+            MeshFinding named = Assert.Single(CreatureChecks.WornSlots(body));
+            Assert.Equal(FindingSeverity.Note, named.Severity);
+            Assert.Contains("32", named.Message, StringComparison.Ordinal);
+
+            NifItem partition = body.Blocks.Where(b => b.Name == "BSDismemberSkinInstance")
+                .SelectMany(b => body.FindItem(b, "Partitions")?.Children ?? []).First();
+            body.FindItem(partition, "Body Part")!.Value.SetCount(0);
+
+            MeshFinding finding = Assert.Single(CreatureChecks.WornSlots(body));
+            Assert.Equal(FindingSeverity.Error, finding.Severity);
+            Assert.Contains("out of range", finding.Message, StringComparison.Ordinal);
+        }
+
+        /// <summary>A creature's own body is skinned without partitions at all, which is fine.</summary>
+        [HavokMastersFact]
+        public void ASkinWithNoPartitionsIsNotFaulted()
+        {
+            NifModel body = NifModel.Load(Path.Combine(Wolf, "wolf.nif"), Db);
+
+            Assert.Equal(FindingSeverity.Note, Assert.Single(CreatureChecks.WornSlots(body)).Severity);
+        }
+
+        /// <summary>
         /// A vertex moved by nothing is drawn at the origin, which is what a converter that gives
         /// a split control point's weights to one copy leaves behind.
         /// </summary>

@@ -13,7 +13,19 @@ namespace SKAssets.Authoring
     /// <param name="DataFolder">The Data folder being written: <c>Meshes</c> and <c>Textures</c> are under it.</param>
     /// <param name="TextureFolder">Where the mesh's own textures go, under <c>Textures</c>: <c>MyMod\Weapons</c>.</param>
     /// <param name="Prefix">Put before each texture's file name.</param>
-    public sealed record MeshTarget(string Fbx, string Nif, string DataFolder, string TextureFolder, string Prefix);
+    /// <param name="BodyPart">
+    /// The biped slot the mesh is worn in, 30 to 61, where it is worn at all.
+    /// </param>
+    /// <remarks>
+    /// A skinned mesh is attached to an actor through the slot each of its partitions names, and
+    /// a converter has no way of knowing which: NIFBX writes 0, which is not a slot. The engine
+    /// and the Creation Kit read it as a biped object, find it out of range, fall back to asking
+    /// the file which node to hang itself off -- a `Prn` string -- and give up when there is none:
+    /// "Could not find parent node extra data for ...". The armour the mesh is worn as is what
+    /// knows the slot, so it is given here. 362 of the game's own worn meshes say 32, the body.
+    /// </remarks>
+    public sealed record MeshTarget(string Fbx, string Nif, string DataFolder, string TextureFolder, string Prefix,
+        int? BodyPart = null);
 
     /// <summary>A converted mesh.</summary>
     /// <param name="Profile">Its census, for the mesh rules.</param>
@@ -73,6 +85,14 @@ namespace SKAssets.Authoring
                     foreach (string field in EffectTextures)
                         if (Child(block, field) is { } slot) Retarget(slot);
             }
+
+            // Every partition of every skinned shape names the slot the mesh is worn in.
+            if (target.BodyPart is { } worn)
+                foreach (NifItem block in model.Blocks)
+                    if (block.Name == "BSDismemberSkinInstance")
+                        foreach (NifItem partition in Child(block, "Partitions")?.Children ?? [])
+                            if (Child(partition, "Body Part") is { } part)
+                                part.Value.SetCount((ulong)worn);
 
             // The texture paths were rewritten after the conversion measured the blocks, and a
             // block that says 116 bytes and writes 132 is a file the game gives up on with

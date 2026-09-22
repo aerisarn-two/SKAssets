@@ -513,6 +513,7 @@ namespace SKAssets.Authoring
                     foreach (MeshFinding finding in CreatureChecks.Skin(worn, skeletonNif)) findings.Add((relative, finding));
                 foreach (MeshFinding finding in CreatureChecks.Triangles(worn, fbx)) findings.Add((relative, finding));
                 foreach (MeshFinding finding in CreatureChecks.Weights(worn)) findings.Add((relative, finding));
+                foreach (MeshFinding finding in CreatureChecks.WornSlots(worn)) findings.Add((relative, finding));
                 foreach (MeshFinding finding in CreatureChecks.BlockSizes(worn)) findings.Add((relative, finding));
             }
 

@@ -277,6 +277,38 @@ namespace SKAssets.Authoring
                 $"{wrong.Count} blocks are not the size the header says, the first being block {index}, a {name}, at {said} bytes against {isNow}")];
         }
 
+        /// <summary>The slot each skinned partition says the mesh is worn in.</summary>
+        /// <remarks>
+        /// A dismembered skin names a biped slot per partition, and the slots are 30 to 61. A
+        /// converter that does not know which one writes 0, and the game reads that as a biped
+        /// object out of range: rather than skinning the mesh to the actor it looks for a `Prn`
+        /// string naming a node to hang it off, finds none, and refuses the mesh with "Could not
+        /// find parent node extra data". 362 of the game's own worn meshes say 32, the body, and
+        /// only 14 partitions in the whole of it say 0.
+        /// </remarks>
+        public static IReadOnlyList<MeshFinding> WornSlots(NifModel body)
+        {
+            ArgumentNullException.ThrowIfNull(body);
+
+            var slots = new List<(string Shape, uint Slot)>();
+            foreach (NifItem shape in body.Blocks.Where(IsShape))
+                if (body.GetRef(shape, "Skin") is { Name: "BSDismemberSkinInstance" } skin)
+                    foreach (NifItem partition in body.FindItem(skin, "Partitions")?.Children ?? [])
+                        slots.Add((body.GetName(shape) ?? "?", body.GetUInt(partition, "Body Part")));
+
+            if (slots.Count == 0)
+                return [new MeshFinding("skin-slot", FindingSeverity.Note, "no partition names a slot, which is how a creature's own body is skinned")];
+
+            var wrong = slots.Where(s => s.Slot is < 30 or > 61).ToList();
+
+            return wrong.Count == 0
+                ? [new MeshFinding("skin-slot", FindingSeverity.Note,
+                    $"all {slots.Count} partitions name a slot: {string.Join(", ", slots.Select(s => s.Slot).Distinct().Order())}")]
+                : [new MeshFinding("skin-slot", FindingSeverity.Error,
+                    $"{wrong.Count} of {slots.Count} partitions name no slot, the first on '{wrong[0].Shape}' saying {wrong[0].Slot}; "
+                    + "the game reads it as a biped object out of range and refuses the mesh")];
+        }
+
         private static bool IsShape(NifItem block) => block.Name is "BSTriShape" or "BSDynamicTriShape" or "NiTriShape";
 
         /// <summary>

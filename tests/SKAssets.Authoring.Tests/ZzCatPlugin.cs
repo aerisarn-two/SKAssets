@@ -69,6 +69,15 @@ public sealed class ZzCatPlugin
             if (left.Count > 0) sb.AppendLine($"still the sabre cat's, in {record.GetType().Name} {record.EditorID}: {string.Join(", ", left)}");
         }
 
+        foreach (var (label, which) in new[] { ("ours", (IBodyPartDataGetter?)plugin.BodyParts.FirstOrDefault()),
+                                              ("vanilla", cache.TryResolve<IBodyPartDataGetter>("SabreCatBodyPartData", out var v) ? v : null) })
+        {
+            if (which is null) continue;
+            sb.AppendLine($"BPTD {label} {which.EditorID}: model={which.Model?.File} parts={which.Parts.Count}");
+            foreach (var part in which.Parts)
+                sb.AppendLine($"   part {part.Flags} node '{part.PartNode}' vats '{part.VatsTarget}' limb '{part.LimbReplacementModel}'");
+        }
+
         // What the game's own small predators reach with: a reach shorter than the two
         // capsules between them is a reach the combat AI can never close to.
         foreach (string id in new[] { "SkeeverRace", "MudcrabRace", "WolfRace", "FoxRace", "SabreCatRace", "ChickenRace", "RabbitRace", "SlaughterfishRace", "SprigganRace" })
