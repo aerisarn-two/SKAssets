@@ -34,6 +34,57 @@ namespace SKAssets.Export.Tests
 
         internal static SkyrimCache Cache => SkyrimCache.Load(Corpus.Havok!);
 
+        /// <summary>One creature copied out of the corpus, with a cache over the copy.</summary>
+        /// <remarks>
+        /// For the tests that write. Everything else reads, and reads the corpus directly.
+        /// </remarks>
+        internal sealed class CreatureCopy : IDisposable
+        {
+            private readonly string _folder = Path.Combine(Path.GetTempPath(), $"skassets-creature-{Guid.NewGuid():N}");
+
+            public CreatureCopy(string creature)
+            {
+                // The whole creature, not the folder the skeleton sits in: the project, the
+                // character, the behaviours and the animations are its siblings, and the cache
+                // cannot open an actor whose project file is not there.
+                string meshes = Path.Combine(_folder, "meshes");
+                string whole = Path.GetDirectoryName(creature)!;
+                string relative = Path.GetRelativePath(Corpus.Havok!, creature);
+
+                Copy(whole, Path.Combine(meshes, Path.GetRelativePath(Corpus.Havok!, whole)));
+                Directory.CreateDirectory(meshes);
+
+                foreach (string name in new[] { SkyrimCache.AnimationDataFileName, SkyrimCache.AnimationSetDataFileName })
+                {
+                    string from = Path.Combine(Corpus.Havok!, name);
+                    if (File.Exists(from)) File.Copy(from, Path.Combine(meshes, name));
+                }
+
+                Creature = Path.Combine(meshes, relative);
+                Cache = SkyrimCache.Load(meshes);
+            }
+
+            public string Creature { get; }
+
+            public SkyrimCache Cache { get; }
+
+            public void Dispose()
+            {
+                try { Directory.Delete(_folder, recursive: true); } catch (IOException) { }
+            }
+
+            private static void Copy(string from, string to)
+            {
+                Directory.CreateDirectory(to);
+
+                foreach (string file in Directory.GetFiles(from))
+                    File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
+
+                foreach (string folder in Directory.GetDirectories(from))
+                    Copy(folder, Path.Combine(to, Path.GetFileName(folder)));
+            }
+        }
+
         [CreatureFact]
         public void ACreatureIsItsSkeletonAndEverythingBesideIt()
         {
@@ -161,7 +212,13 @@ namespace SKAssets.Export.Tests
         [ClipCorpusFact]
         public void AWholeCreatureComesApartIntoTheFilesItWasBuiltFrom()
         {
-            CreatureAssets assets = CreatureExchange.Find(Chicken, Cache)!;
+            // Into a copy of the creature, never the corpus: importing clips writes an
+            // animation packfile per clip beside the project, and the project this opens is
+            // the one the cache found. Run against the extracted meshes themselves it
+            // rewrote twenty of the chicken's shipped animations as uncompressed ones, which
+            // every later reading of that corpus then failed on.
+            using var work = new CreatureCopy(Chicken);
+            CreatureAssets assets = CreatureExchange.Find(work.Creature, work.Cache)!;
             var db = NifXmlDatabase.LoadEmbedded();
 
             FbxDocument scene = CreatureExchange.Export(assets, db, out _);
