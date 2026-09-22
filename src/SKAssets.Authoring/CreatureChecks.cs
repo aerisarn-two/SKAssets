@@ -239,6 +239,44 @@ namespace SKAssets.Authoring
             return findings;
         }
 
+        /// <summary>
+        /// Every block's declared size against the size it would be written at.
+        /// </summary>
+        /// <remarks>
+        /// A NIF's header states how long each block is, and the game reads a block and then
+        /// checks it consumed exactly that many bytes. A file whose sizes were measured before
+        /// its last edit -- a texture path rewritten to where the texture now is, sixteen bytes
+        /// longer -- loads in a viewer that reads by structure and is refused by the game and
+        /// the Creation Kit with "stream size mismatch". Nothing recomputes them but
+        /// <c>UpdateHeader</c>, so nothing but this notices.
+        /// </remarks>
+        public static IReadOnlyList<MeshFinding> BlockSizes(NifModel model)
+        {
+            ArgumentNullException.ThrowIfNull(model);
+
+            List<int> Declared() => model.FindItem(model.Header, "Block Size")?.Children
+                .Select(c => (int)c.Value.ToUInt()).ToList() ?? [];
+
+            List<int> declared = Declared();
+            model.UpdateHeader();
+            List<int> measured = Declared();
+
+            var wrong = declared.Zip(measured).Select((p, i) => (Index: i, p.First, p.Second))
+                .Where(p => p.First != p.Second).ToList();
+
+            if (declared.Count != measured.Count)
+                return [new MeshFinding("nif-block-count", FindingSeverity.Error,
+                    $"the header lists {declared.Count} block sizes for {measured.Count} blocks")];
+
+            if (wrong.Count == 0)
+                return [new MeshFinding("nif-block-sizes", FindingSeverity.Note, $"all {declared.Count} blocks are the size the header says")];
+
+            (int index, int said, int isNow) = wrong[0];
+            string name = index < model.Blocks.Count ? model.Blocks[index].Name : "?";
+            return [new MeshFinding("nif-block-sizes", FindingSeverity.Error,
+                $"{wrong.Count} blocks are not the size the header says, the first being block {index}, a {name}, at {said} bytes against {isNow}")];
+        }
+
         private static bool IsShape(NifItem block) => block.Name is "BSTriShape" or "BSDynamicTriShape" or "NiTriShape";
 
         /// <summary>

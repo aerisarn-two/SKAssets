@@ -37,7 +37,7 @@
       and this is where the two become a single file. A tool that only wants to
       know what a plugin refers to should not be made to carry any of it.
     -->
-    <PackageReference Include="NIFBX" Version="1.6.19" />
+    <PackageReference Include="NIFBX" Version="1.6.20" />
     <PackageReference Include="HKFBX" Version="1.5.0" />
     <PackageReference Include="HKSK" Version="2.8.0" />
   </ItemGroup>

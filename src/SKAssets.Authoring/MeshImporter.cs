@@ -74,6 +74,11 @@ namespace SKAssets.Authoring
                         if (Child(block, field) is { } slot) Retarget(slot);
             }
 
+            // The texture paths were rewritten after the conversion measured the blocks, and a
+            // block that says 116 bytes and writes 132 is a file the game gives up on with
+            // "stream size mismatch". Nothing recomputes the header but this.
+            model.UpdateHeader();
+
             Directory.CreateDirectory(Path.GetDirectoryName(target.Nif)!);
             model.Save(target.Nif);
             return new ImportedMesh(NifProfileReader.Read(model), [.. written.Values.Distinct()], findings);
