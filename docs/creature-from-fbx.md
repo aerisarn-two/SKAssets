@@ -46,8 +46,9 @@ graph step swapped.
   root and into the cache (`docs/animation-export.md`, "Root motion");
 - **sounds**, `.wav` or `.xwm`, one per animation event that should play one.
 
-**Decisions.** The creature's name; what each animation *is* (§4); the eight speeds
-per movement type; the attack list; which shipped creature to borrow the non-graph
+**Decisions.** The creature's name; what each animation *is* (§4); the names of its
+movement types and which roles share one -- their speeds are read off the clips,
+not decided (§5); the attack list; which shipped creature to borrow the non-graph
 records from (§6).
 
 ## 2. The skeleton and the ragdoll
@@ -163,14 +164,12 @@ var spec = new CreatureSpec
         LookAtChain = ["Spine2", "Neck1", "Neck2", "Head"],
         Legs = [new("LFrontLeg1", "LFrontLeg2", "LFrontLegToe", KneeAxis: new(1, 0, 0)), /* … */],
     },
-    // A MOVT holds walk and run together, eight speeds; one iState per distinct type,
-    // and the race's roles point at them. Walk and run are one type here; a swimmer
-    // adds a second.
-    Movements = new Dictionary<MovementRole, MovementType>
-    {
-        [MovementRole.Walk] = direwolfDefault,   // Name "DirewolfDefault" -> iState_DirewolfDefault
-        [MovementRole.Run]  = direwolfDefault,
-    },
+    // A MOVT holds walk and run together; one iState per distinct name, and the race's
+    // roles point at them. Only the names are decided: the eight speeds are read off
+    // the walk and run clips' travel per heading (HKSK docs/speed-data.md §7.2), which
+    // is how the shipped records were authored. Walk and run are one type here.
+    MovementNames = new() { [MovementRole.Walk] = "DirewolfDefault", [MovementRole.Run] = "DirewolfDefault" },
+    // MovementOverrides: only to force speeds the clips do not deliver; the clips then play scaled.
     // AttackEvents is derived from the Attack roles' names when left out.
 };
 
@@ -180,6 +179,8 @@ AssemblyPlan plan = BehaviorAssembler.Plan(spec);       // nothing written
 // plan.Slots     -> every role, filled, reused or empty
 // plan.Warnings  -> "WalkForward carries no root track", "no canned turns: cannedTurn* events will be ignored"
 // plan.IStates   -> { iState_DirewolfDefault: 0 }
+// plan.Movements -> { DirewolfDefault: forward walk 148.2, run 452.7, back 0, sides 0, turn rates 180/270/360 }
+//                   -- the MOVT to write, read off the clips; a heading with no clip reads 0
 // plan.Events    -> the core, plus attackStart_Bite, plus the modules'
 
 AssembledProject built = BehaviorAssembler.Assemble(cache, spec, group: "Canine");
@@ -217,7 +218,7 @@ Built, in `ImportCreature`, and almost all of it carries over unchanged. What
 | --- | --- | --- |
 | the Havok files | the template's project, character, behaviours and animations copied beside it | **replaced**: `BehaviorAssembler.Assemble` writes them; the rig still comes from the skeleton FBX as below |
 | the skeleton | FBX → `skeleton.nif` (`SkeletonExchange.ImportMesh`) and the rig with its ragdoll (`ImportHavok`, `HkxSkeletonFile.Write`), checked by `MeshRules` | same |
-| movement types | the template's `iState_` constants renamed in every copied graph and its `MOVT`s copied under the new names with the speeds given | **changed**: one `MOVT` per `plan.IStates` key, `MNAM` the suffix, speeds from the spec; no renaming, since the graph was written with the names |
+| movement types | the template's `iState_` constants renamed in every copied graph and its `MOVT`s copied under the new names with the speeds given | **changed**: one `MOVT` per `plan.Movements` entry, `MNAM` the name, the eight speeds as the plan read them off the clips, the turn rates by family, thresholds `FLT_MAX`; no renaming, since the graph was written with the names, and no speeds to give |
 | the race | `RACE` duplicated; skeleton, project and movement defaults repointed | **changed in one field**: `Attacks` written from the plan's attack events instead of copied |
 | the body | the armour import (§3): mesh to NIF, textures to DDS, ARMO and ARMA copied and re-raced | same |
 | the body part data | copied when the skeleton is replaced | same |
@@ -234,7 +235,7 @@ where each comes from:
 | record | from the kin | from the assembly | from you |
 | --- | --- | --- | --- |
 | `RACE` | keywords, material, impact set, voice, loot sounds, abilities, unarmed reach and damage, the physical numbers, flags (`Walks`, `Swims`, `Flies`) | `BehaviorGraph` = the project path; `Attacks` = one entry per `plan.Events` attack, its event name the entry's; `BaseMovementDefault*` = the movement types by role | `Name`, `SkeletalModel` (§2), `Skin` (§3) |
-| `MOVT` | -- | one per `plan.IStates` key, `MNAM` exactly the suffix, the eight speeds from `spec.Movements` | the speeds |
+| `MOVT` | the turn rates, where the kin's family default is not wanted | one per `plan.Movements` entry, `MNAM` exactly the name, the eight speeds read off the clips, thresholds `FLT_MAX` | the names, and an override only where a clip's travel is not the speed wanted |
 | `BPTD` | copied, its model the new skeleton `.nif` | -- | -- |
 | `ARMO` / `ARMA` | the skin's shape | -- | the body (§3) |
 | `FSTS` / `FSTP` / `IPDS` / `SNDR` | the kin's set copied onto the body, its entries kept for the kin's events the triggers still use | a footstep chain added per triggered event the set lacks, tagged with the event | the audio files per event, as `Sounds`; an event with no audio gets the chain with the kin's sound |
@@ -272,11 +273,12 @@ CreatureResult built = authoring.AssembleCreature(new NewCreatureFromRoles
     Body = new() { [ModelSlot.Main] = "direwolf.fbx" },
     Animations = animations,               // RoledAnimation, as §4; imported inside Assemble
     Bones = bones,
-    Movements = new()                      // by role; a named type with eight speeds becomes a MOVT
-    {                                      // and an iState_<name>; two roles may share one type
-        [MovementRole.Walk] = new("DirewolfDefault", MovementSpeeds.Uniform(150, 450)),
-        [MovementRole.Run]  = new("DirewolfDefault", MovementSpeeds.Uniform(150, 450)),
+    MovementNames = new()                  // by role; each name becomes a MOVT and an iState_<name>,
+    {                                      // its speeds read off the clips (plan.Movements)
+        [MovementRole.Walk] = "DirewolfDefault",
+        [MovementRole.Run]  = "DirewolfDefault",
     },
+    // MovementOverrides = new() { ["DirewolfDefault"] = MovementSpeeds.Uniform(150, 450) },  // only to force it
     Sounds = new() { ["NPCDirewolfBark"] = ["bark.wav"] },
     Npc = "EncWolf",
 });
