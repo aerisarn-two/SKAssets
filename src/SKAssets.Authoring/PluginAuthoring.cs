@@ -163,6 +163,7 @@ namespace SKAssets.Authoring
             private readonly string _id = (request.Prefix ?? owner.Prefix) + request.EditorId;
             private readonly List<AuthoredRecord> _records = [];
             private readonly List<string> _meshes = [];
+            private readonly List<string> _textures = [];
             private readonly List<(string, MeshFinding)> _findings = [];
             private readonly List<string> _notes = [];
             private readonly Dictionary<string, string> _converted = new(StringComparer.OrdinalIgnoreCase);
@@ -170,7 +171,7 @@ namespace SKAssets.Authoring
             private IMajorRecordGetter? _created;
 
             public ImportResult Result(AuthoredRecord record) =>
-                new(record, _records, _meshes, _findings, _notes);
+                new(record, _records, _meshes, _textures, _findings, _notes);
 
             // ------------------------------------------------------------ the kinds
 
@@ -431,11 +432,15 @@ namespace SKAssets.Authoring
 
                 if (!_converted.ContainsKey(relative))
                 {
-                    NifProfile profile = owner._meshes.Import(request.Fbx[slot], target);
+                    ImportedMesh mesh = owner._meshes.Import(new MeshTarget(
+                        request.Fbx[slot], target, owner.OutputFolder,
+                        request.TextureFolder ?? request.MeshFolder, request.Prefix ?? owner.Prefix));
                     _converted[relative] = target;
                     _meshes.Add(Path.Combine("Meshes", relative).Replace('\\', '/'));
 
-                    foreach (MeshFinding finding in MeshRules.Check(recordType, profile))
+                    foreach (string texture in mesh.Textures)
+                        if (!_textures.Contains(texture.Replace('\\', '/'))) _textures.Add(texture.Replace('\\', '/'));
+                    foreach (MeshFinding finding in mesh.Findings.Concat(MeshRules.Check(recordType, mesh.Profile)))
                         _findings.Add((relative, finding));
                 }
 

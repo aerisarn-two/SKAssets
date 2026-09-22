@@ -35,6 +35,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      Textures: a DCC tool hands over PNG, TGA or JPEG, and the game reads DDS. StbImageSharp
+      decodes (public domain or MIT), BCnEncoder.Net writes block-compressed DDS with mipmaps
+      (MIT or Unlicense). Both are managed code, so the conversion runs wherever this does.
+    -->
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
+    <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="SKAssets.Authoring.Tests" />
   </ItemGroup>
 

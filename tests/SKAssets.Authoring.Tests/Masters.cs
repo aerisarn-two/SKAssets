@@ -81,12 +81,12 @@ namespace SKAssets.Authoring.Tests
     {
         public List<(string Fbx, string Nif)> Calls { get; } = [];
 
-        public NifProfile Import(string fbxPath, string nifPath)
+        public ImportedMesh Import(MeshTarget target)
         {
-            Calls.Add((fbxPath, nifPath));
-            Directory.CreateDirectory(Path.GetDirectoryName(nifPath)!);
-            File.WriteAllText(nifPath, fbxPath);
-            return profile ?? new NifProfile { RootType = "BSFadeNode", Shapes = 1, Collisions = 1 };
+            Calls.Add((target.Fbx, target.Nif));
+            Directory.CreateDirectory(Path.GetDirectoryName(target.Nif)!);
+            File.WriteAllText(target.Nif, target.Fbx);
+            return new ImportedMesh(profile ?? new NifProfile { RootType = "BSFadeNode", Shapes = 1, Collisions = 1 }, [], []);
         }
     }
 }

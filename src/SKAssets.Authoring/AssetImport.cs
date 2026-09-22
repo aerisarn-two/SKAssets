@@ -108,6 +108,12 @@ namespace SKAssets.Authoring
         /// </summary>
         public required string MeshFolder { get; init; }
 
+        /// <summary>
+        /// Where the meshes' own textures go, under <c>Textures</c>; the mesh folder by default. A
+        /// texture the FBX takes from the game is left where it is.
+        /// </summary>
+        public string? TextureFolder { get; init; }
+
         /// <summary>Whether to copy the recipes that make the template -- crafting and tempering.</summary>
         public bool Recipes { get; init; } = true;
     }
@@ -123,12 +129,14 @@ namespace SKAssets.Authoring
     /// <param name="Record">The record the asset is.</param>
     /// <param name="Records">Every record written: the asset's, the ones it owns, its recipes.</param>
     /// <param name="Meshes">Every mesh written, relative to the output folder.</param>
+    /// <param name="Textures">Every texture written for those meshes, relative to the output folder.</param>
     /// <param name="Findings">What the mesh rules say about each mesh against the record that names it.</param>
     /// <param name="Notes">Choices made for the caller: a template traced to its base, a slot filled from another.</param>
     public sealed record ImportResult(
         AuthoredRecord Record,
         IReadOnlyList<AuthoredRecord> Records,
         IReadOnlyList<string> Meshes,
+        IReadOnlyList<string> Textures,
         IReadOnlyList<(string Mesh, MeshFinding Finding)> Findings,
         IReadOnlyList<string> Notes);
 }

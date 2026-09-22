@@ -34,6 +34,12 @@ namespace SKAssets.Authoring.Tests
             NifXmlDatabase schema = NifXmlDatabase.LoadEmbedded();
 
             string sword = Fbx(data, schema, @"meshes\weapons\iron\longsword.nif");
+
+            // The sword's diffuse beside its FBX, as an author's own texture would be; its normal
+            // map is not, and stays the game's.
+            string beside = Path.Combine(Path.GetDirectoryName(sword)!, "textures", "ironlongsword.dds");
+            Directory.CreateDirectory(Path.GetDirectoryName(beside)!);
+            File.WriteAllBytes(beside, Archived(data, @"textures\weapons\iron\ironlongsword.dds"));
             string cuirass = Fbx(data, schema, @"meshes\armor\iron\male\cuirasslight_1.nif");
 
             using (var authoring = PluginAuthoring.Open(data, "MyMod.esp", _out))
@@ -51,6 +57,13 @@ namespace SKAssets.Authoring.Tests
                     Fbx = new Dictionary<ModelSlot, string> { [ModelSlot.Main] = cuirass }, MeshFolder = @"MyMod\Armor",
                 });
 
+                Assert.Equal(["Textures/MyMod/Weapons/MyMod_ironlongsword.dds"], weapon.Textures);
+                Assert.True(File.Exists(Path.Combine(_out, "Textures", "MyMod", "Weapons", "MyMod_ironlongsword.dds")));
+
+                var named = TexturesOf(NifModel.Load(Path.Combine(_out, weapon.Meshes[0]), schema));
+                Assert.Contains(@"Textures\MyMod\Weapons\MyMod_ironlongsword.dds", named);
+                Assert.Contains(named, t => t.Equals(@"textures\weapons\iron\ironlongsword_n.dds", StringComparison.OrdinalIgnoreCase));
+
                 Assert.DoesNotContain(weapon.Findings.Concat(armour.Findings), f => f.Finding.Severity != FindingSeverity.Note);
                 Assert.Equal(["RecipeWeaponMyMod_Sword", "TemperWeaponMyMod_Sword"],
                     weapon.Records.Where(r => r.Type == nameof(ConstructibleObject)).Select(r => r.EditorId).Order());
@@ -67,23 +80,32 @@ namespace SKAssets.Authoring.Tests
             Assert.Equal("MyMod_CuirassAA", Assert.Single(written.ArmorAddons).EditorID);
         }
 
-        /// <summary>A mesh out of the game's archives, converted to FBX in the output folder.</summary>
+        /// <summary>A mesh out of the game's archives, converted to FBX in a folder of its own.</summary>
         private string Fbx(string data, NifXmlDatabase schema, string archived)
+        {
+            using var stream = new MemoryStream(Archived(data, archived));
+            string fbx = Path.Combine(_out, "source", Path.GetFileNameWithoutExtension(archived), Path.GetFileNameWithoutExtension(archived) + ".fbx");
+            Directory.CreateDirectory(Path.GetDirectoryName(fbx)!);
+            new NifToFbx(NifModel.Load(stream, schema)).Convert().Save(fbx);
+            return fbx;
+        }
+
+        /// <summary>A file out of the game's archives. Their paths are separated by '/' here, and records' by '\\'.</summary>
+        private static byte[] Archived(string data, string archived)
         {
             foreach (string archive in Directory.GetFiles(data, "*.bsa"))
                 foreach (var entry in Archive.CreateReader(GameRelease.SkyrimSE, archive).Files)
-                {
-                    if (!string.Equals(entry.Path.Replace('\\', '/'), archived.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)) continue;
-
-                    using var stream = new MemoryStream(entry.GetBytes());
-                    string fbx = Path.Combine(_out, "source", Path.GetFileNameWithoutExtension(archived) + ".fbx");
-                    Directory.CreateDirectory(Path.GetDirectoryName(fbx)!);
-                    new NifToFbx(NifModel.Load(stream, schema)).Convert().Save(fbx);
-                    return fbx;
-                }
+                    if (string.Equals(entry.Path.Replace('\\', '/'), archived.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                        return entry.GetBytes();
 
             throw new FileNotFoundException($"no archive in {data} holds {archived}");
         }
+
+        /// <summary>Every texture path a mesh's texture sets name.</summary>
+        private static List<string> TexturesOf(NifModel model) =>
+            [.. model.Blocks.Where(b => b.Name == "BSShaderTextureSet")
+                .SelectMany(b => b.Children.First(c => c.Name == "Textures").Children)
+                .Select(t => t.Value.Get<string>()).OfType<string>().Where(t => t.Length > 0)];
     }
 
     /// <summary>The game's Data folder, when one is to hand.</summary>

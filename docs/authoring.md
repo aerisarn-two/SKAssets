@@ -106,7 +106,27 @@ and converted by NIFBX (`FbxToNif`). Each is then checked with
 `SKAssets.Content.Assets.MeshRules` against the record type that names it: an armour mesh
 skinned to bones of its own, not the actor's, is reported.
 
-## 3. What an armour copies
+## 3. Textures
+
+A DCC tool names a texture where it found it, `C:\work\sword_d.png`, and NIFBX keeps what
+it can of that: from `textures\` on when the path has it, and otherwise the path as it
+came with its extension made `.dds`. That names a file the game will never find, and the
+texture itself is written nowhere. So each mesh's textures are handled as it is imported:
+
+- every texture the FBX references is looked for beside the FBX -- where its relative path
+  points, where its absolute one does, and by name in the FBX's folder or a `textures`
+  folder beside it, **whatever the case of the name**: the game's own files spell the
+  same texture `IronLongsword.dds` in a record and `ironlongsword.dds` in an archive;
+- one that is found is written to `Textures\<TextureFolder>\<prefix><name>.dds` and the
+  mesh pointed at it -- a DDS copied as it is, a PNG, TGA, JPEG or BMP encoded as BC7 with
+  its mipmaps (StbImageSharp to decode, BCnEncoder.Net to encode);
+- one that is not found keeps its path when that is a game path -- a mesh reusing a
+  vanilla texture, which is ordinary -- and is reported as `texture-not-found` when it is
+  an absolute path on somebody's disc.
+
+`TextureFolder` defaults to the mesh folder. The textures written are in the result.
+
+## 4. What an armour copies
 
 Armour is the one type whose meshes live on another record, and the one with the most
 choices:
@@ -124,7 +144,7 @@ ARMO MyMod_Cuirass            copy of ArmorIronCuirass
 separate piece. Each is copied and given the same meshes, which is right for a single
 piece and a starting point for the rest; the result notes it.
 
-## 4. Traps
+## 5. Traps
 
 - **Paths in the archives are separated by `/` on Linux** and by `\` in the records.
   Compare the two after normalising, or every lookup misses.
