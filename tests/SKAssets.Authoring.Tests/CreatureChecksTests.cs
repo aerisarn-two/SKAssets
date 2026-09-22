@@ -86,6 +86,42 @@ namespace SKAssets.Authoring.Tests
             Assert.Contains("out of range", finding.Message, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// A shipped body carries a sphere on every bone, and a converted one carries none until
+        /// they are measured: the bound is merged from them and there is nothing to merge.
+        /// </summary>
+        [HavokMastersFact]
+        public void ASkinWhoseBonesCarryNoSphereIsReportedAndCanBeMeasured()
+        {
+            NifModel body = NifModel.Load(Path.Combine(Wolf, "wolf.nif"), Db);
+
+            Assert.Equal(FindingSeverity.Note, Assert.Single(CreatureChecks.SkinBounds(body)).Severity);
+
+            // Emptied, as NIFBX leaves them.
+            var spheres = body.Blocks.Where(b => b.Name == "NiSkinData")
+                .SelectMany(d => body.FindItem(d, "Bone List")?.Children ?? [])
+                .Select(bone => body.FindItem(bone, "Bounding Sphere")!).ToList();
+            var was = spheres.Select(s => float.Parse(body.FindItem(s, "Radius")!.Value.ToString()!)).ToList();
+            foreach (NifItem sphere in spheres)
+            {
+                body.FindItem(sphere, "Center")!.Value.Set(new NifVector3(0, 0, 0));
+                body.FindItem(sphere, "Radius")!.Value.SetFloat(0f);
+            }
+
+            MeshFinding finding = Assert.Single(CreatureChecks.SkinBounds(body));
+            Assert.Equal(FindingSeverity.Error, finding.Severity);
+            Assert.Contains("no number at all", finding.Message, StringComparison.Ordinal);
+
+            // Measured again from the mesh they come back the size the game shipped them, within
+            // a tenth or so either way: a sphere is fixed by which vertices it has to hold and
+            // how its centre is chosen, and neither is written down anywhere.
+            Assert.NotEmpty(WornMesh.Bounds(body));
+            var now = spheres.Select(s => float.Parse(body.FindItem(s, "Radius")!.Value.ToString()!)).ToList();
+            var both = was.Zip(now).Where(p => p.First > 0 && p.Second > 0).ToList();
+            Assert.NotEmpty(both);
+            Assert.All(both, p => Assert.InRange(p.Second, p.First * 0.85f, p.First * 1.25f));
+        }
+
         /// <summary>A creature's own body is skinned without partitions at all, which is fine.</summary>
         [HavokMastersFact]
         public void ASkinWithNoPartitionsIsNotFaulted()

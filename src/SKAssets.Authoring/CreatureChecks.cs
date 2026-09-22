@@ -309,6 +309,42 @@ namespace SKAssets.Authoring
                     + "the game reads it as a biped object out of range and refuses the mesh")];
         }
 
+        /// <summary>The sphere each of a skin's bones carries for what it moves.</summary>
+        /// <remarks>
+        /// A skinned shape has no bound of its own: the engine rebuilds one each frame from a
+        /// sphere per bone, held in the bone's space. A converter leaves them all empty and at
+        /// the origin, and a bound merged from nothing but coincident empty spheres is not a
+        /// number -- the engine propagates that up the tree and culls everything beneath it,
+        /// which is an invisible actor complaining once a frame. No shape the game ships has an
+        /// empty one.
+        /// </remarks>
+        public static IReadOnlyList<MeshFinding> SkinBounds(NifModel body)
+        {
+            ArgumentNullException.ThrowIfNull(body);
+
+            int bones = 0, empty = 0;
+            foreach (NifItem shape in body.Blocks.Where(IsShape))
+            {
+                if (body.GetRef(shape, "Skin") is not { } skin || body.GetRef(skin, "Data") is not { } data) continue;
+                foreach (NifItem bone in body.FindItem(data, "Bone List")?.Children ?? [])
+                {
+                    bones++;
+                    if (body.FindItem(bone, "Bounding Sphere") is { } sphere
+                        && float.TryParse(body.FindItem(sphere, "Radius")?.Value.ToString(), out float r) && r <= 0f) empty++;
+                }
+            }
+
+            if (bones == 0) return [];
+
+            return empty == bones
+                ? [new MeshFinding("skin-bounds", FindingSeverity.Error,
+                    $"not one of the {bones} bones carries a sphere, so the shape's bound is merged from nothing and comes out as no number at all")]
+                : empty > 0
+                    ? [new MeshFinding("skin-bounds", FindingSeverity.Note,
+                        $"{bones - empty} of {bones} bones carry a sphere; the rest move no vertex")]
+                    : [new MeshFinding("skin-bounds", FindingSeverity.Note, $"all {bones} bones carry a sphere")];
+        }
+
         private static bool IsShape(NifItem block) => block.Name is "BSTriShape" or "BSDynamicTriShape" or "NiTriShape";
 
         /// <summary>

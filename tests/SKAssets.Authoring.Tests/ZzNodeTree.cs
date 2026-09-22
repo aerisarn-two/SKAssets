@@ -55,6 +55,30 @@ public sealed class ZzNodeTree
                     sb.AppendLine($"      partition: {string.Join(", ", part.Children.Where(c => c.Children.Count == 0).Select(c => $"{c.Name}={c.Value}"))}");
             }
 
+            foreach (NifItem block in model.Blocks.Where(b => b.Name is "NiNode" or "BSFadeNode" or "BSTriShape" or "NiTriShape"))
+            {
+                NifTransform at = model.GetTransform(block);
+                if (at.Scale is 1f && at.Translation.X is 0f && at.Translation.Y is 0f && at.Translation.Z is 0f) continue;
+                sb.AppendLine($"   transform [{model.IndexOf(block),3}] '{model.GetName(block)}' translation {at.Translation} scale {at.Scale} rotation {at.Rotation}");
+            }
+
+            foreach (NifItem data in model.Blocks.Where(b => b.Name == "NiSkinData"))
+            {
+                NifItem? overall = model.FindItem(data, "Skin Transform");
+                sb.AppendLine($"   skin data [{model.IndexOf(data),3}] overall scale {model.FindItem(overall!, "Scale")?.Value} "
+                    + $"translation {model.FindItem(overall!, "Translation")?.Value}");
+                int i = 0;
+                foreach (NifItem bone in model.FindItem(data, "Bone List")?.Children ?? [])
+                {
+                    NifItem? t = model.FindItem(bone, "Skin Transform");
+                    float scale = float.TryParse(model.FindItem(t!, "Scale")?.Value.ToString(), out float f) ? f : float.NaN;
+                    float radius = float.TryParse(model.FindItem(model.FindItem(bone, "Bounding Sphere")!, "Radius")?.Value.ToString(), out float r) ? r : float.NaN;
+                    if (scale == 0f || !float.IsFinite(scale) || radius == 0f)
+                        sb.AppendLine($"      bone[{i}] scale {scale} bound radius {radius}");
+                    i++;
+                }
+            }
+
             // Everything that is neither a node nor geometry, listed once.
             foreach (NifItem block in model.Blocks)
                 if (block.Name is not ("NiNode" or "BSFadeNode" or "BSLeafAnimNode" or "BSTriShape" or "BSDynamicTriShape" or "NiTriShape"))

@@ -86,6 +86,15 @@ namespace SKAssets.Authoring
                         if (Child(block, field) is { } slot) Retarget(slot);
             }
 
+            // A worn mesh's shapes hang off the root, as every worn mesh the game has does.
+            if (target.BodyPart is not null) findings.AddRange(WornMesh.Flatten(model)
+                .Select(n => new MeshFinding("skin-parent", FindingSeverity.Note, n)));
+
+            // A skinned shape's bound is rebuilt each frame from one sphere per bone, and the
+            // conversion leaves every sphere empty.
+            findings.AddRange(WornMesh.Bounds(model)
+                .Select(n => new MeshFinding("skin-bounds", FindingSeverity.Note, n)));
+
             // Every partition of every skinned shape names the slot the mesh is worn in.
             if (target.BodyPart is { } worn)
                 foreach (NifItem block in model.Blocks)
