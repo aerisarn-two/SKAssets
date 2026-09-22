@@ -345,6 +345,39 @@ the creature never had.
 and not from the animation file, why a slot and a clip are not the same thing, and
 the one number to check after an export.
 
+## An FBX into a plugin: SKAssets.Authoring
+
+Imports an FBX as a new record, copied from a similar one in the load order, with every
+record it needs to be used: the addons an armour wears, a weapon's first-person static,
+the recipes that make it at a forge or a wheel. The copies are new records in a new
+plugin, named with a prefix of your choosing; the masters are not touched.
+
+```csharp
+using var authoring = PluginAuthoring.Open(dataFolder, "MyMod.esp", outputFolder);
+authoring.Prefix = "MyMod_";
+
+authoring.Import(new AssetImport
+{
+    Kind = AuthoredKind.Armor,
+    Template = "ArmorIronCuirass",
+    EditorId = "Cuirass",
+    Fbx = new Dictionary<ModelSlot, string>
+    {
+        [ModelSlot.Main] = "cuirass.fbx",          // _1, and _0 unless LightWeight is given
+        [ModelSlot.Female] = "cuirass_f.fbx",
+    },
+    MeshFolder = @"MyMod\Armor",
+});
+
+authoring.Save();
+```
+
+Twenty record types can be imported -- statics, furniture, doors, activators,
+containers, flora, trees, lights, the inventory items, books, scrolls, ammunition,
+weapons and armour. **`docs/authoring.md`** is what each owns and shares, measured over
+the masters, and where each FBX goes. Each mesh is converted by NIFBX and checked
+against the record that names it.
+
 ## What it does not find yet
 
 - **Voice.** No record names a dialogue file. `.fuz` and `.lip` paths are built
@@ -418,6 +451,9 @@ a plugin names should not be made to carry a NIF reader and a Havok library.
   that take a second file.
 - `Havok/` — the animation cache indexed by what a mesh can name, and the
   records HKSK needs to write the caches, read from a load order.
+
+`src/SKAssets.Authoring` — FBX meshes into a new plugin, as copies of vanilla
+records and of what those own. Built on Export for the conversion.
 
 `src/SKAssets.Export` — the files as one scene. The heaviest of the three and the
 reason for the split: it carries NIFBX, HKFBX and HKSK together.

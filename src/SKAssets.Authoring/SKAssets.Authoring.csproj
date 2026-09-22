@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>SKAssets.Authoring</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>SKAssets.Authoring</PackageId>
+    <Authors>Aerisarn</Authors>
+    <Description>Imports an FBX as a Skyrim asset and writes the plugin records that use it: a copy of a similar vanilla record, the records it owns, and the recipes that make it, all pointed at the new mesh.</Description>
+    <PackageTags>skyrim;bethesda;esp;plugin;fbx;nif;import;modding</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/aerisarn-two/SKAssets</RepositoryUrl>
+    <Version>0.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The FBX to NIF conversion and the mesh rules come through Export and
+      Content; the records are Mutagen's. Kept apart from Export so a tool that
+      only reads or exports assets does not carry a plugin writer.
+    -->
+    <ProjectReference Include="../SKAssets.Export/SKAssets.Export.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SKAssets.Authoring.Tests" />
+  </ItemGroup>
+
+</Project>

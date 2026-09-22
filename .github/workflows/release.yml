@@ -115,7 +115,7 @@ jobs:
           -p:RepositoryUrl=https://github.com/${{ github.repository }}
 
       #
-      # All three packages carry the same version. They are released together
+      # All four packages carry the same version. They are released together
       # because each is built against the one below it and nothing makes that
       # true at restore time otherwise.
       #
@@ -123,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          for project in src/SKAssets/SKAssets.csproj src/SKAssets.Content/SKAssets.Content.csproj src/SKAssets.Export/SKAssets.Export.csproj; do
+          for project in src/SKAssets/SKAssets.csproj src/SKAssets.Content/SKAssets.Content.csproj src/SKAssets.Export/SKAssets.Export.csproj src/SKAssets.Authoring/SKAssets.Authoring.csproj; do
             dotnet pack "$project" --no-build -c Release \
               -p:Version=${{ steps.version.outputs.version }} \
               -p:RepositoryUrl=https://github.com/${{ github.repository }} \
@@ -138,8 +138,9 @@ jobs:
           ls -l src/SKAssets/bin/Release/net9.0/SKAssets.dll
           ls -l src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
           ls -l src/SKAssets.Export/bin/Release/net9.0/SKAssets.Export.dll
+          ls -l src/SKAssets.Authoring/bin/Release/net9.0/SKAssets.Authoring.dll
           ls -l artifacts/*.nupkg
-          test "$(ls artifacts/*.nupkg | wc -l)" -eq 3
+          test "$(ls artifacts/*.nupkg | wc -l)" -eq 4
 
       - uses: actions/upload-artifact@v4
         with:
@@ -148,6 +149,7 @@ jobs:
             src/SKAssets/bin/Release/net9.0/SKAssets.dll
             src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
             src/SKAssets.Export/bin/Release/net9.0/SKAssets.Export.dll
+            src/SKAssets.Authoring/bin/Release/net9.0/SKAssets.Authoring.dll
             artifacts/*.nupkg
           if-no-files-found: error
 
@@ -180,4 +182,5 @@ jobs:
             src/SKAssets/bin/Release/net9.0/SKAssets.dll
             src/SKAssets.Content/bin/Release/net9.0/SKAssets.Content.dll
             src/SKAssets.Export/bin/Release/net9.0/SKAssets.Export.dll
+            src/SKAssets.Authoring/bin/Release/net9.0/SKAssets.Authoring.dll
             artifacts/*.nupkg
