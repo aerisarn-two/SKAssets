@@ -37,6 +37,14 @@ public sealed class ZzBlends
                             ? names[binding.m_variableIndex] : $"#{binding.m_variableIndex}";
                 }
 
+                foreach (BSSpeedSamplerModifier sampler in file.All<BSSpeedSamplerModifier>())
+                {
+                    string bound = string.Join(", ", sampler.m_variableBindingSet?.m_bindings
+                        .Select(b => $"{b.m_memberPath}<-{(names is not null && b.m_variableIndex >= 0 && b.m_variableIndex < names.Count ? names[b.m_variableIndex] : b.m_variableIndex.ToString())}") ?? []);
+                    sb.AppendLine($"   {Path.GetFileName(path),-26} sampler '{sampler.m_name}' [{bound}] "
+                        + $"state {sampler.m_state} direction {sampler.m_direction} goalSpeed {sampler.m_goalSpeed} speedOut {sampler.m_speedOut}");
+                }
+
                 foreach (hkbBlenderGenerator blend in file.All<hkbBlenderGenerator>())
                 {
                     if (blend.m_children.Count < 2) continue;
@@ -47,7 +55,9 @@ public sealed class ZzBlends
                             : c.m_generator?.m_name ?? "?";
                         return $"{c.m_weight:F1}={what}";
                     });
-                    sb.AppendLine($"   {Path.GetFileName(path),-26} {blend.m_name,-34} on '{Variable(blend, "blendParameter")}' "
+                    string bound = string.Join(", ", blend.m_variableBindingSet?.m_bindings
+                        .Select(b => $"{b.m_memberPath}<-{(names is not null && b.m_variableIndex >= 0 && b.m_variableIndex < names.Count ? names[b.m_variableIndex] : b.m_variableIndex.ToString())}") ?? []);
+                    sb.AppendLine($"   {Path.GetFileName(path),-26} {blend.m_name,-34} bindings [{bound}] "
                         + $"flags 0x{blend.m_flags:X} sync {blend.m_indexOfSyncMasterChild}");
                     sb.AppendLine($"        {string.Join("  ", arms)}");
                 }
