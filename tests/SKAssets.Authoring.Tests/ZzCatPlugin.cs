@@ -69,6 +69,9 @@ public sealed class ZzCatPlugin
             if (left.Count > 0) sb.AppendLine($"still the sabre cat's, in {record.GetType().Name} {record.EditorID}: {string.Join(", ", left)}");
         }
 
+        foreach (var movt in plugin.MovementTypes)
+            sb.AppendLine($"MOVT {movt.EditorID}: name '{movt.Name}' walk {movt.ForwardWalk} run {movt.ForwardRun}");
+
         foreach (var (label, which) in new[] { ("ours", (IBodyPartDataGetter?)plugin.BodyParts.FirstOrDefault()),
                                               ("vanilla", cache.TryResolve<IBodyPartDataGetter>("SabreCatBodyPartData", out var v) ? v : null) })
         {

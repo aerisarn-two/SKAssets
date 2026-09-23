@@ -126,14 +126,14 @@ namespace SKAssets.Authoring.Tests
             }
 
             using var plugin = SkyrimMod.CreateFromBinaryOverlay(Path.Combine(_out, "MyMod.esp"), SkyrimRelease.SkyrimSE);
-            Assert.Equal(["Direwolf_WolfDefault", "Direwolf_WolfRun"], plugin.MovementTypes.Select(m => m.Name).Order());
-            Assert.Equal(800f, plugin.MovementTypes.Single(m => m.Name == "Direwolf_WolfDefault").ForwardRun);
+            Assert.Equal(["DirewolfDefault", "DirewolfRun"], plugin.MovementTypes.Select(m => m.Name).Order());
+            Assert.Equal(800f, plugin.MovementTypes.Single(m => m.Name == "DirewolfDefault").ForwardRun);
 
             string project = Directory.EnumerateFiles(Path.Combine(_out, "Meshes"), "DirewolfProject.hkx", SearchOption.AllDirectories).Single();
             var walk = HKSK.Behavior.ProjectWalk.Of(project);
             Assert.True(HKSK.Behavior.BehaviorRoot.Of(project) is { } root);
             var constants = HKSK.Behavior.StateConstants.Of(walk, root);
-            Assert.Contains("iState_Direwolf_WolfDefault", constants.Keys);
+            Assert.Contains("iState_DirewolfDefault", constants.Keys);
             Assert.DoesNotContain(constants.Keys, k => k is "iState_WolfDefault" or "iState_WolfRun");
 
             var table = SkyrimCache.Load(Path.Combine(_out, "Meshes")).SpeedData!;

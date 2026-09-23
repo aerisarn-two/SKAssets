@@ -241,8 +241,27 @@ namespace SKAssets.Authoring
             // reads the project's file list, and the list is now the copies' names.
             var storedFiles = entry.Block.Files.Select(Renamed).ToList();
 
-            // The project names its character file and the character its behaviour, both by the
-            // names they had. Rewritten in the copies, which are the files the game will read.
+            CharacterFile? character = ProjectFile.Load(projectFile).CharacterFiles
+                .Select(f => HavokPath.Resolve(sourceFolder, f)).OfType<string>().Select(CharacterFile.Load).FirstOrDefault();
+
+            int shared = 0;
+            foreach (string animation in character?.AnimationNames ?? [])
+            {
+                if (animation.Replace('/', '\\').StartsWith(@"..\", StringComparison.Ordinal)) { shared++; continue; }
+                if (HavokPath.Resolve(sourceFolder, animation) is not { } path)
+                {
+                    notes.Add($"the animation '{animation}' is not under {sourceFolder} and was not copied");
+                    continue;
+                }
+
+                Copy(path, animation);
+            }
+            if (shared > 0) notes.Add($"{shared} animations live outside the template's folder and are shared, not copied");
+
+            // The copies name each other by the names they had: the project names its character
+            // file and the character names its behaviour. Both are rewritten in the copies,
+            // which are the files the game will read. The animations are renamed further down,
+            // once the clips that replace them have been imported under the names they had.
             if (named.Count > 0)
             {
                 ProjectFile copiedProject = ProjectFile.Load(Path.Combine(target, project + ".hkx"));
@@ -258,19 +277,8 @@ namespace SKAssets.Authoring
                     strings.m_behaviorFilename = Renamed(strings.m_behaviorFilename);
                     copiedCharacter.File!.Save(path);
                 }
-            }
 
-            CharacterFile? character = ProjectFile.Load(projectFile).CharacterFiles
-                .Select(f => HavokPath.Resolve(sourceFolder, f)).OfType<string>().Select(CharacterFile.Load).FirstOrDefault();
-
-            int shared = 0;
-            foreach (string animation in character?.AnimationNames ?? [])
-            {
-                if (animation.Replace('/', '\\').StartsWith(@"..\", StringComparison.Ordinal)) { shared++; continue; }
-                if (HavokPath.Resolve(sourceFolder, animation) is { } path) Copy(path, animation);
-                else notes.Add($"the animation '{animation}' is not under {sourceFolder} and was not copied");
             }
-            if (shared > 0) notes.Add($"{shared} animations live outside the template's folder and are shared, not copied");
 
             // The skeleton mesh sits beside the rig; the race names it, from Meshes, in the
             // record's own case, which the disc need not share.
@@ -361,7 +369,8 @@ namespace SKAssets.Authoring
                     ? HKSK.Behavior.StateConstants.Of(walk, root).Keys.Select(k => k["iState_".Length..]).Where(byName.ContainsKey).ToList()
                     : [];
 
-                var renamed = RenameStateConstants(target, storedFiles, own, id);
+                var renamed = RenameStateConstants(target, storedFiles, own,
+                    movement => AfterCreature(movement, Spellings(relativeFolder, race.EditorID), id) ?? $"{id}_{movement}");
                 foreach ((string old, string renamedTo) in renamed)
                 {
                     var made = Plugin.MovementTypes.DuplicateInAsNewRecord<MovementType, IMovementTypeGetter>(byName[old], renamedTo);
@@ -587,12 +596,77 @@ namespace SKAssets.Authoring
                 }
             }
 
+            // The animations last, because until now they had to answer to the names the clips
+            // being imported call them by: a manifest written against the template names
+            // 'Animations\\_SabreCat_Idle_Sleep.hkx' and means the slot, not the sabre cat. With
+            // the clips in, the files are renamed on disk and everything that names one follows:
+            // the character's list, whose order is every cache index and so is rewritten in
+            // place, and each clip generator's animation.
+            if (named.Count > 0) RenameAnimations(target, project, storedFiles, Renamed, files, folder, notes);
+
             var gameRecords = GameRecordReader.Read([.. _cache.ListedOrder.OfType<ISkyrimModGetter>(), Plugin]);
             CacheAmendment amended = CacheGeneration.Amend(caches, project, gameRecords);
             caches.Save();
             _caches = caches;
 
             return new CreatureResult(records[0], records, project, [.. files.Distinct()], amended, clips, findings, notes);
+        }
+
+        /// <summary>
+        /// Renames the copied animations after the new creature, and everything that names one.
+        /// </summary>
+        private static void RenameAnimations(string target, string project, IEnumerable<string> behaviours,
+            Func<string, string> renamed, List<string> files, string folder, List<string> notes)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string named in ProjectFile.Load(Path.Combine(target, project + ".hkx")).CharacterFiles)
+            {
+                if (HavokPath.Resolve(target, named) is not { } path) continue;
+                CharacterFile character = CharacterFile.Load(path);
+                if (character.Data.m_stringData is not { } strings) continue;
+
+                bool changed = false;
+                for (int i = 0; i < strings.m_animationNames.Count; i++)
+                {
+                    string was = strings.m_animationNames[i];
+                    string now = renamed(was);
+                    if (string.Equals(now, was, StringComparison.Ordinal)) continue;
+
+                    if (HavokPath.Resolve(target, was) is { } from)
+                    {
+                        string to = Path.Combine(target, now.Replace('\\', Path.DirectorySeparatorChar));
+                        Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                        File.Move(from, to, overwrite: true);
+                        files.Remove(Path.Combine("Meshes", folder, was).Replace('\\', '/'));
+                        files.Add(Path.Combine("Meshes", folder, now).Replace('\\', '/'));
+                    }
+
+                    strings.m_animationNames[i] = now;
+                    map[was] = now;
+                    changed = true;
+                }
+
+                if (changed) character.File!.Save(path);
+            }
+
+            if (map.Count == 0) return;
+
+            foreach (string stored in behaviours)
+            {
+                if (HavokPath.Resolve(target, stored) is not { } path) continue;
+                HavokFile behaviour;
+                try { behaviour = HavokFile.Load(path); }
+                catch (Exception e) when (e is not OutOfMemoryException) { continue; }
+
+                bool changed = false;
+                foreach (HKX2.hkbClipGenerator clip in behaviour.All<HKX2.hkbClipGenerator>())
+                    if (map.TryGetValue(clip.m_animationName, out string? now)) { clip.m_animationName = now; changed = true; }
+
+                if (changed) behaviour.Save(path);
+            }
+
+            notes.Add($"{map.Count} animations were named after the template and are named after the creature");
         }
 
         /// <summary>
@@ -693,54 +767,16 @@ namespace SKAssets.Authoring
             foreach ((FormKey key, string file) in misfiled)
                 notes.Add($"idle {reached[key].EditorID} names '{reached[key].Filename!.GivenPath}', which is not the template's; the copy plays under '{file}'");
 
-            // What the template calls itself, so a copy can be named after the new creature
-            // rather than prefixed: SabreCatDeath becomes HouseCatDeath. Its records rarely spell
-            // it out -- the sabre cat's idles are SCatRecoil, ScatReset, CatIdleWarn -- so the
-            // short forms are taken along, or a copy reads HouseCatSCatRecoil. se-cmd's retarget
-            // keeps a table of those spellings by hand; here they are made from the name: the
-            // whole of it, its last word, and the leading words' initials before that word.
-            static IEnumerable<string> Forms(string name)
-            {
-                var words = System.Text.RegularExpressions.Regex.Matches(name, "[A-Z][a-z0-9]*|[a-z0-9]+")
-                    .Select(m => m.Value).Where(w => w.Length > 0).ToList();
-                yield return name;
-                if (words.Count < 2) yield break;
-                yield return string.Concat(words[..^1].Select(w => w[0])) + words[^1];
-                yield return words[^1];
-            }
-
-            var spellings = new[] { Path.GetFileName(templateFolder.TrimEnd('/', '\\')), templateRace.EditorID?.Replace("Race", "") ?? "" }
-                .Where(n => n.Length > 2).SelectMany(Forms).Where(n => n.Length > 2)
-                .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(n => n.Length).ToList();
+            // A copy is named after the new creature where the template named itself, and
+            // prefixed where it did not.
+            List<string> spellings = Spellings(templateFolder, templateRace.EditorID);
             var taken = new HashSet<string>(
                 _cache.PriorityOrder.WinningOverrides<IIdleAnimationGetter>().Select(i => i.EditorID ?? ""),
                 StringComparer.OrdinalIgnoreCase);
 
             string Rename(string editorId)
             {
-                foreach (string spelling in spellings)
-                {
-                    // A short form is a word of the name and matches where a name would stand,
-                    // at the front: 'Cat' inside 'Duplicate' is not the creature.
-                    int at = editorId.IndexOf(spelling, StringComparison.OrdinalIgnoreCase);
-                    if (at < 0 || (at > 0 && spelling.Length < 5)) continue;
-                    string renamed = editorId[..at] + id + editorId[(at + spelling.Length)..];
-                    if (taken.Add(renamed)) return renamed;
-                }
-
-                // The masters misspell a creature's name in an editor id now and then, and the
-                // sabre cat's swim idle is SabreCastStartSwimming. A name off by one letter is
-                // still the name when what follows it starts a word of its own.
-                foreach (string spelling in spellings)
-                    for (int length = spelling.Length + 1; length >= spelling.Length - 1; length--)
-                    {
-                        if (length < 3 || length > editorId.Length) continue;
-                        string rest = editorId[length..];
-                        if (rest.Length > 0 && !char.IsUpper(rest[0])) continue;
-                        if (!OneApart(editorId[..length], spelling)) continue;
-                        string near = id + rest;
-                        if (taken.Add(near)) return near;
-                    }
+                if (AfterCreature(editorId, spellings, id) is { } renamed && taken.Add(renamed)) return renamed;
 
                 string prefixed = id + editorId;
                 for (int n = 2; !taken.Add(prefixed); n++) prefixed = id + editorId + n;
@@ -777,6 +813,62 @@ namespace SKAssets.Authoring
                         made.RelatedIdles[i] = linked.ToLink<IIdleRelationGetter>();
 
             notes.Add($"{copies.Count} idle records copied onto the new behaviour");
+        }
+
+        /// <summary>
+        /// The ways a template spells itself in the names of its records: the whole of it, its
+        /// last word, and the leading words' initials before that word.
+        /// </summary>
+        /// <remarks>
+        /// The sabre cat's records rarely spell it out -- they are SCatRecoil, ScatReset,
+        /// CatIdleWarn, SabreCatDefault -- so a copy prefixed with the new creature's name reads
+        /// HouseCatSCatRecoil. se-cmd's retarget keeps a table of these by hand; here they are
+        /// made from the name.
+        /// </remarks>
+        private static List<string> Spellings(string templateFolder, string? templateRace)
+        {
+            static IEnumerable<string> Forms(string name)
+            {
+                var words = System.Text.RegularExpressions.Regex.Matches(name, "[A-Z][a-z0-9]*|[a-z0-9]+")
+                    .Select(m => m.Value).Where(w => w.Length > 0).ToList();
+                yield return name;
+                if (words.Count < 2) yield break;
+                yield return string.Concat(words[..^1].Select(w => w[0])) + words[^1];
+                yield return words[^1];
+            }
+
+            return [.. new[] { Path.GetFileName(templateFolder.TrimEnd('/', '\\')), templateRace?.Replace("Race", "") ?? "" }
+                .Where(n => n.Length > 2).SelectMany(Forms).Where(n => n.Length > 2)
+                .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(n => n.Length)];
+        }
+
+        /// <summary>
+        /// The template's name inside <paramref name="name"/> replaced by the new creature's, or
+        /// null where it does not spell itself there at all.
+        /// </summary>
+        private static string? AfterCreature(string name, IReadOnlyList<string> spellings, string id)
+        {
+            foreach (string spelling in spellings)
+            {
+                // A short form is a word of the name and matches where a name would stand, at the
+                // front: 'Cat' inside 'Duplicate' is not the creature.
+                int at = name.IndexOf(spelling, StringComparison.OrdinalIgnoreCase);
+                if (at >= 0 && (at == 0 || spelling.Length >= 5)) return name[..at] + id + name[(at + spelling.Length)..];
+            }
+
+            // The masters misspell a creature's name in an editor id now and then, and the sabre
+            // cat's swim idle is SabreCastStartSwimming. A name off by one letter is still the
+            // name when what follows it starts a word of its own.
+            foreach (string spelling in spellings)
+                for (int length = spelling.Length + 1; length >= spelling.Length - 1; length--)
+                {
+                    if (length < 3 || length > name.Length) continue;
+                    string rest = name[length..];
+                    if (rest.Length > 0 && !char.IsUpper(rest[0])) continue;
+                    if (OneApart(name[..length], spelling)) return id + rest;
+                }
+
+            return null;
         }
 
         /// <summary>Whether two names differ by at most one letter inserted, dropped or changed.</summary>
@@ -911,7 +1003,7 @@ namespace SKAssets.Authoring
         /// </summary>
         /// <returns>The movement type names renamed, old to new.</returns>
         private static Dictionary<string, string> RenameStateConstants(
-            string folder, IEnumerable<string> files, IEnumerable<string> movementTypes, string id)
+            string folder, IEnumerable<string> files, IEnumerable<string> movementTypes, Func<string, string> rename)
         {
             var known = new HashSet<string>(movementTypes, StringComparer.OrdinalIgnoreCase);
             var renamed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -936,7 +1028,7 @@ namespace SKAssets.Authoring
                         string movement = name[Prefix.Length..];
                         if (!known.Contains(movement)) continue;
 
-                        if (!renamed.TryGetValue(movement, out string? to)) renamed[movement] = to = $"{id}_{movement}";
+                        if (!renamed.TryGetValue(movement, out string? to)) renamed[movement] = to = rename(movement);
                         strings.m_variableNames[i] = Prefix + to;
                         changed = true;
                     }

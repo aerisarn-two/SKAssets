@@ -117,7 +117,12 @@ public sealed class ZzCatCreature
             caches.Save();
             report.AppendLine($"cache clips no behaviour defines, removed: {string.Join(", ", stale)}");
             var played = CatGraph.Played(folder);
-            var manifest = File.ReadAllLines(Path.Combine(Mod, "manifest.tsv")).Select(l => l.Split('\t')[1]).ToList();
+            // The manifest names the slots as the sabre cat named them, and the import renames
+            // the ones that spelled the sabre cat out, so a manifest name is read either way.
+            var manifest = File.ReadAllLines(Path.Combine(Mod, "manifest.tsv"))
+                .Select(l => l.Split('\t')[1])
+                .Select(n => played.Contains(n) ? n : n.Replace("SabreCat", Name, StringComparison.OrdinalIgnoreCase))
+                .ToList();
             var unplayed = manifest.Where(m => !played.Contains(m)).ToList();
             var unstored = played.Where(p => !manifest.Contains(p, StringComparer.OrdinalIgnoreCase)).ToList();
             report.AppendLine($"clips played by the graph: {manifest.Count - unplayed.Count} of {manifest.Count}; unplayed: {string.Join(", ", unplayed)}; played but not the cat's: {string.Join(", ", unstored)}");
