@@ -366,6 +366,31 @@ ladder delivers 1.5, 33.0, 82.3 and 164.6; the run ladder 126.4 and 273.7. The
 proportions are the sabre cat's, because the play rates are: its creep is a
 twenty-fifth of its walk and so is the cat's.
 
+## 10c. And where a turning blend's arms go
+
+The same rule, in the blends that steer, and one difference of authoring behind
+it that is worth knowing before copying any creature.
+
+**The sabre cat's forward clips do not turn.** Its `WalkForwardL` travels 162
+units and rotates a tenth of a degree. So the arms of its turning blends -- 62.8,
+77.1, 122.7 degrees a second -- are not measurements of anything in the clip.
+They are numbers an animator wrote down for how much of a turn each clip looks
+like, and the engine does the turning.
+
+**The cat's clips carry the turn in their root motion**, a clean ninety degrees
+a second at a walk, because that is how they were authored in Blender. So its
+arms have to be what the clips will really do, and the play rate counts again:
+the slow walk said ninety where its clip at a twenty-fifth rate delivers four,
+and the fast trot said a hundred and thirty-five where its clip at twice rate
+turns two hundred and seventy. A graph that picks an arm expecting a turn and
+receives a fraction of it is a creature that begins turning across a lot of
+ground and comes out barely rotated.
+
+The turn in place needed nothing, and checking it is how the rest was confirmed:
+its multiplier divides the requested turn by the looping clip's own rate, and
+the sabre cat's expression divides by 112.5 where its clip measures 112.5 to the
+decimal. The cat's measures 174.5 and its expression says 174.5.
+
 ## 11. What is not settled
 
 **Attacks were reported not to fire in game.** The plugin, the set data, the
