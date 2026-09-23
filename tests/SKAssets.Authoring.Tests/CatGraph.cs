@@ -121,20 +121,64 @@ internal sealed class CatGraph
         foreach (HavokFile file in new[] { q, f, n, r }) file.Save(file.Path);
     }
 
+    /// <summary>
+    /// What an arm of a speed ladder delivers: its clip's own travel over its own duration,
+    /// at the rate the generator plays it.
+    /// </summary>
+    /// <remarks>
+    /// A ladder's arm sits at the speed that arm moves the creature, and the game's own are
+    /// exactly that: the sabre cat's trot plays at twice speed for its fast band, 208.7 by 2 is
+    /// 417.4, and its arm reads 417.4; its run plays at 1.15 and at 0.75 for the two run bands,
+    /// 490 by each, and the arms read 563.6 and 367.5. Reading the clip's speed and forgetting
+    /// the rate puts every arm that is not played at one in the wrong place, and the slow walk
+    /// -- one clip at a twenty-fifth speed -- twenty-five times too high, which is a creature
+    /// that stands still while its feet are asked to carry it.
+    /// </remarks>
+    private float Delivered(hkbGenerator? generator)
+    {
+        // An arm is a turn blend whose middle child goes straight on, or a clip on its own.
+        hkbClipGenerator? clip = generator switch
+        {
+            hkbClipGenerator alone => alone,
+            hkbBlenderGenerator turn when turn.m_children.Count > 1 => turn.m_children[1].m_generator as hkbClipGenerator,
+            _ => null,
+        };
+
+        if (clip is null) return 0f;
+        ClipMovement? m = _actor.Animation(clip.m_animationName)?.Motion;
+        return m is null || m.Duration <= 0 ? 0f : m.Travel / m.Duration * clip.m_playbackSpeed;
+    }
+
     /// <summary>The forward blends' speeds and turn rates, and the fast run in the top band.</summary>
     private void Locomotion(GraphEditor ed, GraphEditor q)
     {
         float walk = Speed("WalkForward"), trot = Speed("TrotForward"), run = Speed("RunForward"), fast = Speed("RunFast_F_RM");
-        float trotFast = MathF.Min(2 * trot, 0.8f * run);
-        float runStart = 0.98f * trotFast, walkStart = 0.92f * runStart;
-        _log.AppendLine($"speeds: walk {walk:F1}, trot {trot:F1}, run {run:F1}, fast run {fast:F1}; trot-fast band {trotFast:F1}; runStart > {runStart:F1}, walkStart < {walkStart:F1}");
+
+        // The top run band plays the fast run, and the arms are read after the swap so that
+        // what an arm says is what the clip under it will do.
+        var fastBlend = ed.Require<hkbBlenderGenerator>("RunBlend_" + ZzCatCreature.Name);
+        string[] fastClips = ["RunFast_L_RM", "RunFast_F_RM", "RunFast_R_RM"];
+        // Renamed with it: the cache numbers a clip by its name, and an existing name keeps its number.
+        string[] fastNames = ["RunFastForwardL", "RunFastForward", "RunFastForwardR"];
+        for (int i = 0; i < 3; i++)
+        {
+            var clip = (hkbClipGenerator)fastBlend.m_children[i].m_generator!;
+            clip.m_animationName = A(fastClips[i]);
+            clip.m_name = fastNames[i];
+        }
 
         var walkBlend = ed.Require<hkbBlenderGenerator>("ForwardWalkBlend");
-        float[] walkBands = [0.15f * walk, walk, trot, trotFast];
-        for (int i = 0; i < walkBands.Length; i++) walkBlend.m_children[i].m_weight = walkBands[i];
         var runBlend = ed.Require<hkbBlenderGenerator>("ForwardRunBlend");
-        runBlend.m_children[0].m_weight = run;
-        runBlend.m_children[1].m_weight = fast;
+        foreach (hkbBlenderGenerator ladder in new[] { walkBlend, runBlend })
+            foreach (hkbBlenderGeneratorChild arm in ladder.m_children)
+                arm.m_weight = Delivered(arm.m_generator);
+
+        float trotFast = walkBlend.m_children[^1].m_weight;
+        float runStart = 0.98f * trotFast, walkStart = 0.92f * runStart;
+        _log.AppendLine($"clip speeds: walk {walk:F1}, trot {trot:F1}, run {run:F1}, fast run {fast:F1}");
+        _log.AppendLine($"walk ladder delivers {string.Join(", ", walkBlend.m_children.Select(c => c.m_weight.ToString("F1")))}; "
+            + $"run ladder {string.Join(", ", runBlend.m_children.Select(c => c.m_weight.ToString("F1")))}");
+        _log.AppendLine($"runStart > {runStart:F1}, walkStart < {walkStart:F1}");
 
         foreach (var (blend, left) in new[] { ("WalkSlowBlend_" + ZzCatCreature.Name, "WalkForwardL"), ("WalkBlend_" + ZzCatCreature.Name, "WalkForwardL"),
                                                ("TrotBlend_" + ZzCatCreature.Name, "TrotForwardL"), ("TrotFastBlend_" + ZzCatCreature.Name, "TrotForwardL"),
@@ -146,18 +190,6 @@ internal sealed class CatGraph
             b.m_children[1].m_weight = 0f;
             b.m_children[2].m_weight = -MathF.Abs(TurnRate(right));
             _log.AppendLine($"  {blend}: {b.m_children[0].m_weight:F1} / {b.m_children[2].m_weight:F1} deg/s");
-        }
-
-        // The top run band plays the fast run.
-        var fastBlend = ed.Require<hkbBlenderGenerator>("RunBlend_" + ZzCatCreature.Name);
-        string[] fastClips = ["RunFast_L_RM", "RunFast_F_RM", "RunFast_R_RM"];
-        // Renamed with it: the cache numbers a clip by its name, and an existing name keeps its number.
-        string[] fastNames = ["RunFastForwardL", "RunFastForward", "RunFastForwardR"];
-        for (int i = 0; i < 3; i++)
-        {
-            var clip = (hkbClipGenerator)fastBlend.m_children[i].m_generator!;
-            clip.m_animationName = A(fastClips[i]);
-            clip.m_name = fastNames[i];
         }
 
         var eem = ed.Require<hkbEvaluateExpressionModifier>("FowardLocomotion_EEM");
