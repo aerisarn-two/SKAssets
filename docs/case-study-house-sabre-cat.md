@@ -316,10 +316,16 @@ The copies play the template's audio, since that is the only audio there is. Wha
 they are for is that the files can be replaced without touching the game's own
 records, and that a creature's sounds read as its own wherever they are listed.
 
-## 10a. The one record field that did both
+## 11. What the game said, and what each of the three faults was
 
-The creature loaded, stood, and played idles. In game it slid where it should
-have walked and never attacked, and both are the same field.
+The creature loaded, stood, and played idles. Three reports came back from
+running it, and behind them were two faults: one field on a record, and one rule
+about blends broken twice over.
+
+### 11.1 The idle path: an actor that slid and never drew
+
+It slid where it should have walked and it never attacked, and both are one
+field on a record.
 
 An idle record reaches an actor by the behaviour file it names, matched against
 the graph that actor runs. The copies spelled that path from the Data folder,
@@ -344,7 +350,7 @@ attack. And of the cat's animations that replace one of the sabre cat's, 47 tell
 the graph exactly what the original told it; the 10 that differ differ only in
 the sound they name, which is the rename in §10.
 
-## 10b. Where a speed ladder's arms go
+### 11.2 Where a speed ladder's arms go
 
 A parametric blend on speed -- the *ladder* -- has an arm per gait, and an arm
 sits at the speed that arm moves the creature. Not the speed of the clip under
@@ -366,7 +372,7 @@ ladder delivers 1.5, 33.0, 82.3 and 164.6; the run ladder 126.4 and 273.7. The
 proportions are the sabre cat's, because the play rates are: its creep is a
 twenty-fifth of its walk and so is the cat's.
 
-## 10c. And where a turning blend's arms go
+### 11.3 And where a turning blend's arms go
 
 The same rule, in the blends that steer, and one difference of authoring behind
 it that is worth knowing before copying any creature.
@@ -391,27 +397,46 @@ its multiplier divides the requested turn by the looping clip's own rate, and
 the sabre cat's expression divides by 112.5 where its clip measures 112.5 to the
 decimal. The cat's measures 174.5 and its expression says 174.5.
 
-## 11. What is not settled
+### 11.4 The rule the last two share
 
-**Attacks were reported not to fire in game.** The plugin, the set data, the
-caches and the graph all check out, and the engine evaluator reaches the right
-clip for every attack event. The reach was 40 and is now 64, which is the leading
-suspect and the one thing known to have been wrong. Ruled out along the way: the
-character controller capsule (every creature shares 1.7 by 0.4, whatever it
-stands at), uncompressed animation support, and NPC aggression, the vanilla sabre
-cat being Unaggressive too.
+**An arm of a parametric blend sits where its clip actually goes**, and a clip
+goes at its own travel or its own yaw, over its own duration, *at the rate its
+generator plays it*. The play rate is the part that is easy to drop, because it
+is written on the clip and the arm is written on the blend, and nothing checks
+the two against each other.
+
+The game's own satisfy it to the decimal. Read the sabre cat's forward
+locomotion: trot 208.7 at twice rate gives the fast band's 417.4; run 490 at 1.15
+and at 0.75 gives 563.6 and 367.5. An arm read off a clip and multiplied by
+nothing is right only where the rate happens to be one, which in that file is two
+arms of six.
+
+## 12. What is not settled
+
+**Whether the game agrees.** Every fault in §11 was found by comparison against
+the game's own files and fixed, and the creature rebuilds clean, but only running
+it says whether that is all of them.
 
 **Two nodes the template has are still missing from the cat's skeleton**,
-`MagicEffectsNode` and the camera target. They are child nodes rather than extra
-data, so grafting them is a different operation from §4.
+`MagicEffectsNode` and the camera target. `docs/skeleton-extra-nodes.md` says why
+neither is likely to matter: nothing in the engine looks either up by name, the
+keyword that names the first also names a spine bone the cat has not got, and 28
+of the game's 49 creatures ship without it.
+
+**The cat's clips turn where the sabre cat's do not.** Its forward locomotion
+carries ninety degrees a second of root rotation at a walk; the sabre cat's
+`WalkForwardL` travels 162 units and rotates a tenth of a degree. The blends are
+now consistent with the cat's clips, but a creature whose animations steer
+themselves is a different thing from one the engine steers, and that difference
+has not been exercised in a running game.
 
 **The corpus is shared between test suites that write into it.** Two export tests
 failed once in a full run and passed alone and on a repeat. That is how the
 corpus was corrupted once before, and it is worth fixing.
 
-## 12. The checks this left behind
+## 13. The checks and the readings this left behind
 
-Each fault above is now a check that runs on every creature import and reports
+Each mesh fault is now a check that runs on every creature import and reports
 either way, so a build says what it verified rather than only what went wrong:
 
     skeleton-placement  the skeleton NIF against the Havok rig, bone by bone
@@ -423,9 +448,21 @@ either way, so a build says what it verified rather than only what went wrong:
     skin-parent         a worn shape hanging off the root
     nif-block-sizes     every block the size its header says
 
-Plus the probes the diagnosis was done with, kept because the next question of
-the same kind starts from them: what hangs off each node of a NIF and what a skin
-says about its bones; every number in a file against the ones that are not
-numbers; the same over a folder of packfiles; which arrays hold nothing, ours
-beside the file we copied; every name in a project sorted by what kind of name it
-is; every sound a project asks for and what record answers.
+and the direwolf corpus test pins the idle path, the movement type names and the
+records the copy must repoint.
+
+The rest of the diagnosis is kept as probes, because the next question of each
+kind starts from one of them. What hangs off each node of a NIF and what a skin
+says about its bones. Every number in a file against the ones that are not
+numbers, and the same over a folder of packfiles, through HKX2's properties
+rather than its fields -- which is the difference between reading five million
+numbers and none. Which arrays hold nothing, ours beside the file we copied.
+What a skeleton NIF holds that its rig does not. Every name in a project sorted
+by what kind of name it is. Every sound a project asks for and what record
+answers. Two projects driven through the same events side by side. The graphs'
+variables and their starting values, diffed. What each animation tells the graph
+against what the animation it replaced said. A project's speed table. Every
+parametric blend with its arms and its play rates. Every expression a graph
+evaluates. And how far a clip's root really turns, measured both from its last
+sample and by following every sample, since the first cannot see a turn of more
+than half a circle.
