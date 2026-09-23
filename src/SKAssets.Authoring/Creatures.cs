@@ -243,9 +243,9 @@ namespace SKAssets.Authoring
 
             // The nodes inside those graphs carry the template's name too, and the animation
             // cache names the clip generators among them, so the map is kept for it.
-            var renamedNodes = named.Count > 0
-                ? RenameNodes(target, storedFiles, Spellings(relativeFolder, race.EditorID), id, notes)
-                : [];
+            List<string> spellings = Spellings(relativeFolder, race.EditorID);
+            var renamedNodes = named.Count > 0 ? RenameNodes(target, storedFiles, spellings, id, notes) : [];
+            var renamedEvents = named.Count > 0 ? RenameGraphStrings(target, storedFiles, spellings, id, notes) : [];
 
             CharacterFile? character = ProjectFile.Load(projectFile).CharacterFiles
                 .Select(f => HavokPath.Resolve(sourceFolder, f)).OfType<string>().Select(CharacterFile.Load).FirstOrDefault();
@@ -535,7 +535,7 @@ namespace SKAssets.Authoring
 
             // ------------------------------------------------ idle records
 
-            CopyIdles(relativeFolder, folder, race, copy, id, Renamed, records, notes);
+            CopyIdles(relativeFolder, folder, race, copy, id, Renamed, renamedEvents, records, notes);
 
             if (request.Npc is not null)
             {
@@ -561,7 +561,14 @@ namespace SKAssets.Authoring
                 HKSK.Cache.ProjectBlock block = entry.Block.Clone();
                 block.Files = [.. storedFiles];
                 foreach (HKSK.Cache.ClipGeneratorEntry clip in block.Clips)
+                {
                     if (renamedNodes.TryGetValue(clip.Name, out string? now)) clip.Name = now;
+
+                    // A clip's entry restates the events it sends, by name.
+                    for (int i = 0; i < clip.Events.Count; i++)
+                        if (renamedEvents.TryGetValue(clip.Events[i].Name, out string? renamed))
+                            clip.Events[i] = clip.Events[i] with { Name = renamed };
+                }
                 caches.AnimationData.Projects.Add(new AnimationDataProject
                 {
                     Name = project + ".txt",
@@ -618,11 +625,19 @@ namespace SKAssets.Authoring
             // An attack names the clip generators that may play it, so the renaming reaches the
             // set data too. The sabre cat's are Attack1 and the like and change nothing; a
             // creature whose attack clips carry its name would go wrong without this.
-            if (renamedNodes.Count > 0 && caches.SetData?.Project(project) is { } sets)
+            if ((renamedNodes.Count > 0 || renamedEvents.Count > 0) && caches.SetData?.Project(project) is { } sets)
                 foreach (var set in sets.Sets.Sets)
+                {
+                    for (int i = 0; i < set.SwapEvents.Count; i++)
+                        if (renamedEvents.TryGetValue(set.SwapEvents[i], out string? swapped)) set.SwapEvents[i] = swapped;
+
                     foreach (var attack in set.Attacks.Attacks)
+                    {
+                        if (renamedEvents.TryGetValue(attack.EventName, out string? sent)) attack.EventName = sent;
                         for (int i = 0; i < attack.Clips.Count; i++)
                             if (renamedNodes.TryGetValue(attack.Clips[i], out string? now)) attack.Clips[i] = now;
+                    }
+                }
 
             caches.Save();
             _caches = caches;
@@ -642,6 +657,21 @@ namespace SKAssets.Authoring
         /// else, so none of them can be renamed by accident here. The clip generators among
         /// them are named in the animation cache as well, and the map is returned for it.
         /// </remarks>
+        /// <summary>
+        /// An event that is a promise to something outside the project, and so keeps its name.
+        /// </summary>
+        /// <remarks>
+        /// Two kinds. A sound event carries the editor id of the sound to play after the dot --
+        /// <c>SoundPlay.NPCSabreCatAttackSD</c> -- so renaming it silences the creature, and the
+        /// sounds are a creature's own only when it was asked for a voice of its own. A paired
+        /// kill move event is how two graphs agree on one animation: the man's behaviour sends
+        /// <c>KillMoveSabreCat</c> and the sabre cat's answers, so a creature that renames it can
+        /// never be killed that way, whatever it calls itself.
+        /// </remarks>
+        private static bool Promised(string name) =>
+            name.Contains("SoundPlay.", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("KillMove", StringComparison.OrdinalIgnoreCase);
+
         private static Dictionary<string, string> RenameNodes(string target, IEnumerable<string> behaviours,
             IReadOnlyList<string> spellings, string id, List<string> notes)
         {
@@ -676,6 +706,104 @@ namespace SKAssets.Authoring
                 notes.Add($"{map.Count} nodes across {graphs} graphs were named after the template and are named after the creature");
 
             return map;
+        }
+
+        /// <summary>
+        /// Renames the events, variables and character properties of the copied graphs after the
+        /// new creature, in place so that every index into them still means what it did.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A name is stored once per file and referred to by its position, so a rename has to
+        /// keep the order and be made in every file of the project: the graphs a project joins
+        /// share these lists by name and not by index (<c>docs/speed-data.md</c> on why an index
+        /// is only meaningful in the file that holds it).
+        /// </para>
+        /// <para>
+        /// A variable is also named inside the expressions that read it, so those are rewritten
+        /// on a word boundary. Events named to something outside the project keep their names;
+        /// see <see cref="Promised"/>.
+        /// </para>
+        /// </remarks>
+        private static Dictionary<string, string> RenameGraphStrings(string target, IEnumerable<string> behaviours,
+            IReadOnlyList<string> spellings, string id, List<string> notes)
+        {
+            var events = new Dictionary<string, string>(StringComparer.Ordinal);
+            var variables = new Dictionary<string, string>(StringComparer.Ordinal);
+            var properties = new Dictionary<string, string>(StringComparer.Ordinal);
+            var loaded = new List<(string Path, HavokFile File)>();
+
+            foreach (string stored in behaviours)
+            {
+                if (HavokPath.Resolve(target, stored) is not { } path) continue;
+                try { loaded.Add((path, HavokFile.Load(path))); }
+                catch (Exception e) when (e is not OutOfMemoryException) { }
+            }
+
+            bool Rename(IList<string> names, Dictionary<string, string> into, bool skipPromised, Func<string, bool>? skip = null)
+            {
+                bool changed = false;
+                for (int i = 0; i < names.Count; i++)
+                {
+                    string was = names[i];
+                    if (was.Length == 0 || (skipPromised && Promised(was)) || skip?.Invoke(was) == true) continue;
+                    if (AfterCreature(was, spellings, id) is not { } now || string.Equals(now, was, StringComparison.Ordinal)) continue;
+
+                    names[i] = now;
+                    into[was] = now;
+                    changed = true;
+                }
+
+                return changed;
+            }
+
+            foreach ((string path, HavokFile file) in loaded)
+            {
+                bool changed = false;
+                foreach (HKX2.hkbBehaviorGraphStringData strings in file.All<HKX2.hkbBehaviorGraphStringData>())
+                {
+                    changed |= Rename(strings.m_eventNames, events, skipPromised: true);
+                    // A movement type's constant is renamed by the pass that makes the record to
+                    // go with it, so that the two are named the same thing; see
+                    // RenameStateConstants.
+                    changed |= Rename(strings.m_variableNames, variables, skipPromised: false,
+                        skip: name => name.StartsWith("iState_", StringComparison.Ordinal));
+                    changed |= Rename(strings.m_characterPropertyNames, properties, skipPromised: false);
+                }
+
+                foreach (HKX2.hkbCharacterStringData strings in file.All<HKX2.hkbCharacterStringData>())
+                    changed |= Rename(strings.m_characterPropertyNames, properties, skipPromised: false);
+
+                if (changed) file.Save(path);
+            }
+
+            if (variables.Count > 0)
+                foreach ((string path, HavokFile file) in loaded)
+                {
+                    bool changed = false;
+                    foreach (HKX2.hkbExpressionData e in file.All<HKX2.hkbExpressionData>())
+                        changed |= Rewrite(e.m_expression, variables, text => e.m_expression = text);
+                    foreach (HKX2.hkbExpressionCondition c in file.All<HKX2.hkbExpressionCondition>())
+                        changed |= Rewrite(c.m_expression, variables, text => c.m_expression = text);
+                    if (changed) file.Save(path);
+                }
+
+            foreach ((string what, int count) in new[] { ("events", events.Count), ("variables", variables.Count), ("character properties", properties.Count) })
+                if (count > 0) notes.Add($"{count} {what} were named after the template and are named after the creature");
+
+            return events;
+
+            static bool Rewrite(string? text, Dictionary<string, string> map, Action<string> set)
+            {
+                if (string.IsNullOrEmpty(text)) return false;
+                string result = text;
+                foreach ((string from, string to) in map)
+                    result = System.Text.RegularExpressions.Regex.Replace(
+                        result, $@"\b{System.Text.RegularExpressions.Regex.Escape(from)}\b", to);
+                if (string.Equals(result, text, StringComparison.Ordinal)) return false;
+                set(result);
+                return true;
+            }
         }
 
         /// <summary>
@@ -759,7 +887,8 @@ namespace SKAssets.Authoring
         /// </para>
         /// </remarks>
         private void CopyIdles(string templateFolder, string newFolder, IRaceGetter templateRace, Race newRace, string id,
-            Func<string, string> renamed, List<AuthoredRecord> records, List<string> notes)
+            Func<string, string> renamed, IReadOnlyDictionary<string, string> renamedEvents,
+            List<AuthoredRecord> records, List<string> notes)
         {
             static string Normal(string path)
             {
@@ -864,6 +993,10 @@ namespace SKAssets.Authoring
                     made.Filename = new Mutagen.Bethesda.Plugins.Assets.AssetLink<Mutagen.Bethesda.Skyrim.Assets.SkyrimBehaviorAssetType>(
                         ("Meshes\\" + to + rest).Replace('\\', separator));
                 }
+
+                // The event it sends is the graph's, and the graph's events were renamed with it.
+                if (made.AnimationEvent is { } sends && renamedEvents.TryGetValue(sends, out string? nowSends))
+                    made.AnimationEvent = nowSends;
 
                 foreach (IConditionGetter condition in idle.Conditions.Select((c, i) => made.Conditions[i]))
                     if (condition is Condition { Data: GetIsRaceConditionData isRace } && isRace.Race.Link.FormKey == templateRace.FormKey)
