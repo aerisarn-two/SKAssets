@@ -696,6 +696,14 @@ namespace SKAssets.Authoring
                 bool changed = false;
                 foreach (HKX2.IHavokObject held in file.Objects)
                 {
+                    // Only a behaviour's own nodes, which are the hkb classes and Bethesda's BS
+                    // extensions of them. A bone of the rig, a ragdoll body and a constraint all
+                    // carry names too, and those are matched across files -- by the map a request
+                    // gives, by the skin, by the ragdoll's own lists -- so a name there is an
+                    // identifier and not a label. Renaming them took the foot IK legs and the
+                    // keyframed bone lists with them.
+                    string kind = held.GetType().Name;
+                    if (!kind.StartsWith("hkb", StringComparison.Ordinal) && !kind.StartsWith("BS", StringComparison.Ordinal)) continue;
                     if (held.GetType().GetProperty("m_name") is not { CanRead: true, CanWrite: true } name) continue;
                     if (name.PropertyType != typeof(string) || name.GetValue(held) is not string was || was.Length == 0) continue;
                     if (AfterCreature(was, spellings, id) is not { } now || string.Equals(now, was, StringComparison.Ordinal)) continue;
