@@ -79,6 +79,20 @@ public sealed class ZzNodeTree
                 }
             }
 
+            foreach (NifItem shape in model.Blocks.Where(b => b.Name is "BSTriShape" or "NiTriShape"))
+            {
+                if (model.GetRef(shape, "Skin") is not { } skin) continue;
+                NifItem? list = model.FindItem(skin, "Bones");
+                var links = list?.Children.Select(c => (Raw: c.Value.ToString(), Block: model.GetBlock(c))).ToList() ?? [];
+                NifItem? data = model.GetRef(skin, "Data");
+                sb.AppendLine($"   bones of '{model.GetName(shape)}': instance says {model.GetUInt(skin, "Num Bones")}, "
+                    + $"array holds {links.Count}, data says {(data is null ? "-" : model.GetUInt(data, "Num Bones"))}, "
+                    + $"data list {model.FindItem(data!, "Bone List")?.Children.Count}");
+                for (int i = 0; i < links.Count; i++)
+                    if (links[i].Block is null) sb.AppendLine($"      bone[{i}] is nothing, link {links[i].Raw}");
+                    else if (i < 3) sb.AppendLine($"      bone[{i}] '{model.GetName(links[i].Block!)}'");
+            }
+
             // Everything that is neither a node nor geometry, listed once.
             foreach (NifItem block in model.Blocks)
                 if (block.Name is not ("NiNode" or "BSFadeNode" or "BSLeafAnimNode" or "BSTriShape" or "BSDynamicTriShape" or "NiTriShape"))

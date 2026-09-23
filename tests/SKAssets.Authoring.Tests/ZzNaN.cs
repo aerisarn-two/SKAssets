@@ -55,6 +55,17 @@ public sealed class ZzNaN
                     sb.AppendLine($"   scale [{model.IndexOf(block),3}] {block.Name} '{model.GetName(block)}' = {f}");
             }
 
+            // A transform the engine cannot use: a rotation that is not one, or a scale of
+            // nothing. Either makes a NaN out of finite numbers the moment it is composed.
+            foreach (NifItem node in model.Blocks.Where(b => b.Name is "NiNode" or "BSFadeNode" or "BSTriShape" or "NiTriShape"))
+            {
+                NifTransform at = model.GetTransform(node);
+                System.Numerics.Matrix4x4 m = at.ToMatrix();
+                float det = new System.Numerics.Matrix4x4(m.M11, m.M12, m.M13, 0, m.M21, m.M22, m.M23, 0, m.M31, m.M32, m.M33, 0, 0, 0, 0, 1).GetDeterminant() / (at.Scale * at.Scale * at.Scale);
+                if (at.Scale > 1e-6f && Math.Abs(Math.Abs(det) - 1f) < 1e-3f) continue;
+                sb.AppendLine($"   transform [{model.IndexOf(node),3}] '{model.GetName(node)}': scale {at.Scale}, rotation determinant {det}");
+            }
+
             foreach (NifItem data in model.Blocks.Where(b => b.Name == "NiSkinData"))
             {
                 int zero = 0, spheres = 0;
