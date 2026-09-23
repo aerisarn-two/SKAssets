@@ -173,7 +173,8 @@ public sealed class ZzCatCreature
             // and the sabre cat's 85 is a reach its size earns; below 64 the cat circles forever.
             race.UnarmedReach = 64f;
             race.UnarmedDamage = 4f;
-            report.AppendLine($"race {race.EditorID}: small, mass 0.5, reach 40, unarmed damage 4; idles {plugin.IdleAnimations.Count}");
+            report.AppendLine($"race {race.EditorID}: {race.Size.ToString()!.ToLowerInvariant()}, mass {race.BaseMass}, "
+                + $"reach {race.UnarmedReach}, unarmed damage {race.UnarmedDamage}; idles {plugin.IdleAnimations.Count}");
 
             authoring.Save();
 
