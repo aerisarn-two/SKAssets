@@ -136,9 +136,9 @@ internal sealed class CatGraph
         runBlend.m_children[0].m_weight = run;
         runBlend.m_children[1].m_weight = fast;
 
-        foreach (var (blend, left) in new[] { ("WalkSlowBlend_SabreCat", "WalkForwardL"), ("WalkBlend_SabreCat", "WalkForwardL"),
-                                               ("TrotBlend_SabreCat", "TrotForwardL"), ("TrotFastBlend_SabreCat", "TrotForwardL"),
-                                               ("RunSlowBlend_SabreCat", "RunForwardL"), ("RunBlend_SabreCat", "RunFast_L_RM") })
+        foreach (var (blend, left) in new[] { ("WalkSlowBlend_" + ZzCatCreature.Name, "WalkForwardL"), ("WalkBlend_" + ZzCatCreature.Name, "WalkForwardL"),
+                                               ("TrotBlend_" + ZzCatCreature.Name, "TrotForwardL"), ("TrotFastBlend_" + ZzCatCreature.Name, "TrotForwardL"),
+                                               ("RunSlowBlend_" + ZzCatCreature.Name, "RunForwardL"), ("RunBlend_" + ZzCatCreature.Name, "RunFast_L_RM") })
         {
             string right = left.EndsWith("_L_RM") ? left.Replace("_L_", "_R_") : left[..^1] + "R";
             var b = ed.Require<hkbBlenderGenerator>(blend);
@@ -149,7 +149,7 @@ internal sealed class CatGraph
         }
 
         // The top run band plays the fast run.
-        var fastBlend = ed.Require<hkbBlenderGenerator>("RunBlend_SabreCat");
+        var fastBlend = ed.Require<hkbBlenderGenerator>("RunBlend_" + ZzCatCreature.Name);
         string[] fastClips = ["RunFast_L_RM", "RunFast_F_RM", "RunFast_R_RM"];
         // Renamed with it: the cache numbers a clip by its name, and an existing name keeps its number.
         string[] fastNames = ["RunFastForwardL", "RunFastForward", "RunFastForwardR"];
@@ -173,7 +173,7 @@ internal sealed class CatGraph
 
         // ---- the turn clips' rate, and the backward walk's
         float loopRate = MathF.Abs(TurnRate("TurnLoopingL"));
-        ed.Require<hkbEvaluateExpressionModifier>("SabreCatTurnSpeedMult_EEM").m_expressions!.m_expressionsData[0].m_expression =
+        ed.Require<hkbEvaluateExpressionModifier>(ZzCatCreature.Name + "TurnSpeedMult_EEM").m_expressions!.m_expressionsData[0].m_expression =
             $"turnSpeedMult = fabs(TurnDelta/{loopRate:F1})";
         int backRate = ed.VariableIndex("walkBackRate");
         if (backRate >= 0)
@@ -182,7 +182,7 @@ internal sealed class CatGraph
 
         // ---- the kill moves are the sabre cat's and a human's, on rigs the cat does not have
         var qRoot = ed.Require<hkbStateMachine>("QuadrupedRootBehavior");
-        _log.AppendLine($"paired kill state removed: {ed.RemoveState(qRoot, "SabreCatPairedKillState")}");
+        _log.AppendLine($"paired kill state removed: {ed.RemoveState(qRoot, ZzCatCreature.Name + "PairedKillState")}");
 
         // ---- backward: a turning blend over the three backward walks
         var backMachine = ed.Require<hkbStateMachine>("WalkBackwardBehavior");
@@ -325,7 +325,7 @@ internal sealed class CatGraph
     {
         var blend = ed.Find<hkbBlendingTransitionEffect>("DefaultBlend");
         var slow = ed.Find<hkbBlendingTransitionEffect>("slowBlend") ?? blend;
-        var root = ed.Require<hkbStateMachine>("NonCombatIdleBehavior_SabreCat");
+        var root = ed.Require<hkbStateMachine>("NonCombatIdleBehavior_" + ZzCatCreature.Name);
 
         // ---- standing: the main idle among the rest of the repertoire, picked at random
         var main = ed.StateOf(root, "Default_Idle")!;
@@ -420,7 +420,7 @@ internal sealed class CatGraph
     /// <summary>A directional death before the ragdoll: in combat or not, left or right.</summary>
     private void Death(GraphEditor ed)
     {
-        var root = ed.Require<hkbStateMachine>("SabreCatRootBehavior");
+        var root = ed.Require<hkbStateMachine>(ZzCatCreature.Name + "RootBehavior");
         ed.IntVariable("iCombatStance");
         (string, hkbGenerator, float) Die(string anim) =>
             (anim, ed.Clip("Death_" + anim, A(anim), triggers: ("Ragdoll", 0f, true)), 1f);

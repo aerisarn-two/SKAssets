@@ -241,6 +241,12 @@ namespace SKAssets.Authoring
             // reads the project's file list, and the list is now the copies' names.
             var storedFiles = entry.Block.Files.Select(Renamed).ToList();
 
+            // The nodes inside those graphs carry the template's name too, and the animation
+            // cache names the clip generators among them, so the map is kept for it.
+            var renamedNodes = named.Count > 0
+                ? RenameNodes(target, storedFiles, Spellings(relativeFolder, race.EditorID), id, notes)
+                : [];
+
             CharacterFile? character = ProjectFile.Load(projectFile).CharacterFiles
                 .Select(f => HavokPath.Resolve(sourceFolder, f)).OfType<string>().Select(CharacterFile.Load).FirstOrDefault();
 
@@ -554,6 +560,8 @@ namespace SKAssets.Authoring
             {
                 HKSK.Cache.ProjectBlock block = entry.Block.Clone();
                 block.Files = [.. storedFiles];
+                foreach (HKSK.Cache.ClipGeneratorEntry clip in block.Clips)
+                    if (renamedNodes.TryGetValue(clip.Name, out string? now)) clip.Name = now;
                 caches.AnimationData.Projects.Add(new AnimationDataProject
                 {
                     Name = project + ".txt",
@@ -606,10 +614,68 @@ namespace SKAssets.Authoring
 
             var gameRecords = GameRecordReader.Read([.. _cache.ListedOrder.OfType<ISkyrimModGetter>(), Plugin]);
             CacheAmendment amended = CacheGeneration.Amend(caches, project, gameRecords);
+
+            // An attack names the clip generators that may play it, so the renaming reaches the
+            // set data too. The sabre cat's are Attack1 and the like and change nothing; a
+            // creature whose attack clips carry its name would go wrong without this.
+            if (renamedNodes.Count > 0 && caches.SetData?.Project(project) is { } sets)
+                foreach (var set in sets.Sets.Sets)
+                    foreach (var attack in set.Attacks.Attacks)
+                        for (int i = 0; i < attack.Clips.Count; i++)
+                            if (renamedNodes.TryGetValue(attack.Clips[i], out string? now)) attack.Clips[i] = now;
+
             caches.Save();
             _caches = caches;
 
             return new CreatureResult(records[0], records, project, [.. files.Distinct()], amended, clips, findings, notes);
+        }
+
+        /// <summary>
+        /// Renames the nodes of the copied graphs after the new creature.
+        /// </summary>
+        /// <remarks>
+        /// A graph's nodes carry the creature's name as often as its records do -- the sabre cat
+        /// has RunBlend_SabreCat, SabreCatRootBehavior, SabreCatTurnSpeedMult_EEM -- and a copy
+        /// that keeps them reads as the sabre cat's in every tool that opens the graph. Only
+        /// names are touched, which is what makes this safe: a sound the animations ask for, an
+        /// event the records send and a variable the graphs share are all spelled somewhere
+        /// else, so none of them can be renamed by accident here. The clip generators among
+        /// them are named in the animation cache as well, and the map is returned for it.
+        /// </remarks>
+        private static Dictionary<string, string> RenameNodes(string target, IEnumerable<string> behaviours,
+            IReadOnlyList<string> spellings, string id, List<string> notes)
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            int graphs = 0;
+
+            foreach (string stored in behaviours)
+            {
+                if (HavokPath.Resolve(target, stored) is not { } path) continue;
+                HavokFile file;
+                try { file = HavokFile.Load(path); }
+                catch (Exception e) when (e is not OutOfMemoryException) { continue; }
+
+                bool changed = false;
+                foreach (HKX2.IHavokObject held in file.Objects)
+                {
+                    if (held.GetType().GetProperty("m_name") is not { CanRead: true, CanWrite: true } name) continue;
+                    if (name.PropertyType != typeof(string) || name.GetValue(held) is not string was || was.Length == 0) continue;
+                    if (AfterCreature(was, spellings, id) is not { } now || string.Equals(now, was, StringComparison.Ordinal)) continue;
+
+                    name.SetValue(held, now);
+                    map[was] = now;
+                    changed = true;
+                }
+
+                if (!changed) continue;
+                file.Save(path);
+                graphs++;
+            }
+
+            if (map.Count > 0)
+                notes.Add($"{map.Count} nodes across {graphs} graphs were named after the template and are named after the creature");
+
+            return map;
         }
 
         /// <summary>
@@ -850,10 +916,15 @@ namespace SKAssets.Authoring
         {
             foreach (string spelling in spellings)
             {
-                // A short form is a word of the name and matches where a name would stand, at the
-                // front: 'Cat' inside 'Duplicate' is not the creature.
+                // A short form is one word of the name. It matches where a name would stand, at
+                // the front, and only where a word ends there: 'Cat' opens 'CatIdleWarn' and
+                // also 'Catch', and only the first of them is the creature.
                 int at = name.IndexOf(spelling, StringComparison.OrdinalIgnoreCase);
-                if (at >= 0 && (at == 0 || spelling.Length >= 5)) return name[..at] + id + name[(at + spelling.Length)..];
+                if (at < 0) continue;
+                if (spelling.Length >= 5) return name[..at] + id + name[(at + spelling.Length)..];
+
+                int after = at + spelling.Length;
+                if (at == 0 && (after == name.Length || !char.IsLower(name[after]))) return id + name[after..];
             }
 
             // The masters misspell a creature's name in an editor id now and then, and the sabre
