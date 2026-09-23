@@ -149,6 +149,18 @@ internal sealed class CatGraph
         return m is null || m.Duration <= 0 ? 0f : m.Travel / m.Duration * clip.m_playbackSpeed;
     }
 
+    /// <summary>What an arm of a turning blend delivers: its clip's own yaw rate at the rate it is played.</summary>
+    private float Turned(hkbGenerator? generator)
+    {
+        if (generator is not hkbClipGenerator clip) return 0f;
+        ClipMovement? m = _actor.Animation(clip.m_animationName)?.Motion;
+        if (m is null || m.Duration <= 0 || m.Rotations.Count == 0) return 0f;
+
+        Quaternion q = m.Rotations[^1].Value;
+        float yaw = MathF.Atan2(2 * (q.W * q.Z + q.X * q.Y), 1 - 2 * (q.Y * q.Y + q.Z * q.Z));
+        return yaw * 180f / MathF.PI / m.Duration * clip.m_playbackSpeed;
+    }
+
     /// <summary>The forward blends' speeds and turn rates, and the fast run in the top band.</summary>
     private void Locomotion(GraphEditor ed, GraphEditor q)
     {
@@ -180,15 +192,19 @@ internal sealed class CatGraph
             + $"run ladder {string.Join(", ", runBlend.m_children.Select(c => c.m_weight.ToString("F1")))}");
         _log.AppendLine($"runStart > {runStart:F1}, walkStart < {walkStart:F1}");
 
-        foreach (var (blend, left) in new[] { ("WalkSlowBlend_" + ZzCatCreature.Name, "WalkForwardL"), ("WalkBlend_" + ZzCatCreature.Name, "WalkForwardL"),
-                                               ("TrotBlend_" + ZzCatCreature.Name, "TrotForwardL"), ("TrotFastBlend_" + ZzCatCreature.Name, "TrotForwardL"),
-                                               ("RunSlowBlend_" + ZzCatCreature.Name, "RunForwardL"), ("RunBlend_" + ZzCatCreature.Name, "RunFast_L_RM") })
+        // The turn arms are read the same way, and for the same reason. The sabre cat's
+        // forward clips do not turn at all -- its WalkForwardL travels 162 units and rotates a
+        // tenth of a degree -- so its arms are numbers an animator wrote down for how much of a
+        // turn each clip looks like, and the engine does the turning. The cat's clips carry the
+        // turn in their root motion, 90 degrees a second at a walk, so its arms are what the
+        // clips will actually do, which is that rate at the rate they are played.
+        foreach (string blend in new[] { "WalkSlowBlend_", "WalkBlend_", "TrotBlend_", "TrotFastBlend_", "RunSlowBlend_", "RunBlend_" }
+                     .Select(n => n + ZzCatCreature.Name))
         {
-            string right = left.EndsWith("_L_RM") ? left.Replace("_L_", "_R_") : left[..^1] + "R";
             var b = ed.Require<hkbBlenderGenerator>(blend);
-            b.m_children[0].m_weight = MathF.Abs(TurnRate(left));
+            b.m_children[0].m_weight = MathF.Abs(Turned(b.m_children[0].m_generator));
             b.m_children[1].m_weight = 0f;
-            b.m_children[2].m_weight = -MathF.Abs(TurnRate(right));
+            b.m_children[2].m_weight = -MathF.Abs(Turned(b.m_children[2].m_generator));
             _log.AppendLine($"  {blend}: {b.m_children[0].m_weight:F1} / {b.m_children[2].m_weight:F1} deg/s");
         }
 
