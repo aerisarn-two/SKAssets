@@ -316,6 +316,34 @@ The copies play the template's audio, since that is the only audio there is. Wha
 they are for is that the files can be replaced without touching the game's own
 records, and that a creature's sounds read as its own wherever they are listed.
 
+## 10a. The one record field that did both
+
+The creature loaded, stood, and played idles. In game it slid where it should
+have walked and never attacked, and both are the same field.
+
+An idle record reaches an actor by the behaviour file it names, matched against
+the graph that actor runs. The copies spelled that path from the Data folder,
+`Meshes\actors\HouseCat\Behaviors\HouseCatBehavior.hkx`. The game spells it from
+Meshes: all 3,458 idle filenames in the masters begin `Actors\` and not one
+begins `Meshes\`, which the bytes of the two plugins say side by side.
+
+So the cat had 62 idle records and reached none of them. No `moveStart`, which
+is an actor whose capsule moves and whose legs do not. No `combatStanceStart`,
+which is an actor that never draws, and a combat AI that will not order an attack
+from an actor that has not. The only idles it played were the ones its own graph
+cycles through without being asked.
+
+What made this hard to see is that the race's own graph path was already spelled
+correctly, which is why the creature loaded at all. What found it was comparing
+the written plugin against Skyrim.esm rather than reading either alone.
+
+Two things were ruled out on the way, and both are worth recording. Driving our
+project and the sabre cat's through the same events reaches the same attack clip
+in both, with a combat stance and without, so the graph was not refusing the
+attack. And of the cat's animations that replace one of the sabre cat's, 47 tell
+the graph exactly what the original told it; the 10 that differ differ only in
+the sound they name, which is the rename in §10.
+
 ## 11. What is not settled
 
 **Attacks were reported not to fire in game.** The plugin, the set data, the
