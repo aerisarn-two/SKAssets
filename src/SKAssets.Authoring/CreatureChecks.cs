@@ -123,8 +123,63 @@ namespace SKAssets.Authoring
                 findings.Add(new MeshFinding("skin-bones", FindingSeverity.Error,
                     $"the skin is bound to {absent.Count} bones the skeleton does not have: {string.Join(", ", absent.Take(8))}"));
 
-            findings.AddRange(Compare("skin-bind", "the skeleton", "the skin's bind pose", pairs));
+            // A skin bound in one pose on a skeleton standing in another is two different
+            // faults wearing the same numbers, and which one it is decides whether the mesh
+            // is usable. One rigid transform between them, the same for every bone, is a
+            // creature whose skeleton was corrected after its body was authored -- the whole
+            // body follows its skeleton and nothing is bent. A disagreement that differs bone
+            // by bone is a skin fighting its skeleton, and the mesh comes out mangled.
+            if (Uniform(pairs) is { } apart)
+                findings.Add(new MeshFinding("skin-bind", FindingSeverity.Note,
+                    $"the skin is bound in a pose up to {apart:0.##} units from where the skeleton stands, "
+                    + $"but the same shape: one movement carries all {pairs.Count} bones onto it, "
+                    + "so the body is carried along with its skeleton whole -- a creature corrected "
+                    + "after its body was authored"));
+            else
+                findings.AddRange(Compare("skin-bind", "the skeleton", "the skin's bind pose", pairs));
+
             return findings;
+        }
+
+        /// <summary>
+        /// How far a skin's bind pose stands from its skeleton when the two are the same shape
+        /// placed differently; null when they are not, and null when they already agree.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The question is whether one rigid transform carries the whole bind pose onto the
+        /// skeleton. If it does, every bone is displaced by the same movement and the mesh
+        /// renders carried along with its skeleton, whole; if it does not, the bones are being
+        /// pulled about individually and the mesh comes out mangled.
+        /// </para>
+        /// <para>
+        /// It is answered by shape rather than by displacement, which is the thing worth
+        /// getting right. A rotation moves two bones by quite different amounts -- correcting
+        /// a rig that faced backwards moved one shoulder -14.2 along X and the other +14.5 --
+        /// so comparing how far each bone moved says they disagree when they do not. What a
+        /// rigid transform cannot change is the distance between any two bones, so that is
+        /// what is compared: same shape, placed differently.
+        /// </para>
+        /// </remarks>
+        private static float? Uniform(List<(string Bone, Vector3 Nif, Vector3 Havok)> pairs)
+        {
+            if (pairs.Count < 4) return null;
+
+            float apart = pairs.Max(p => (p.Nif - p.Havok).Length());
+            if (apart <= 1f) return null;
+
+            // Every pair of bones, up to a bound: the count is quadratic and a rig has enough
+            // bones that measuring all of them says nothing the first few thousand did not.
+            int step = Math.Max(1, pairs.Count / 60);
+            for (int i = 0; i < pairs.Count; i += step)
+                for (int j = i + 1; j < pairs.Count; j += step)
+                {
+                    float mine = (pairs[i].Nif - pairs[j].Nif).Length();
+                    float theirs = (pairs[i].Havok - pairs[j].Havok).Length();
+                    if (Math.Abs(mine - theirs) > 0.5f) return null;
+                }
+
+            return apart;
         }
 
         /// <summary>

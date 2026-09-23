@@ -109,5 +109,82 @@ namespace SKAssets.Authoring.Tests
             Assert.Contains("NPC Spine2 [Spn2]", made.Rig.Bones.Select(b => b.Name));
             Assert.Contains(made.Renamed.Unmapped, u => u.EndsWith("effector", StringComparison.OrdinalIgnoreCase));
         }
-    }
+    
+        /// <summary>
+        /// The body, converted and made wearable: renamed onto the creature's bones, every
+        /// bone given the sphere of what it moves, and every partition told its slot.
+        /// </summary>
+        [Fact]
+        public void TheBodyIsRenamedBoundedAndSlotted()
+        {
+            if (!Available) return;
+
+            NifModel body = BoughtSkeleton.Body(Bought, Db);
+
+            var bones = body.Blocks
+                .Where(b => b.Name is "NiSkinInstance" or "BSDismemberSkinInstance")
+                .SelectMany(sk => body.GetRefArray(sk, "Bones"))
+                .Select(body.GetName)
+                .ToList();
+
+            Assert.NotEmpty(bones);
+            Assert.Contains(bones, b => b.StartsWith("NPC ", StringComparison.Ordinal));
+
+            // Fewer than a handful may still be under the exporter's names -- a bone the biped
+            // map says nothing about keeps the name it came with -- but not most of them.
+            int old = bones.Count(b => b.StartsWith("Bip01", StringComparison.OrdinalIgnoreCase));
+            Assert.True(old * 4 < bones.Count, $"{old} of {bones.Count} bones are still Bip01");
+
+            Assert.Equal(FindingSeverity.Note, Assert.Single(CreatureChecks.SkinBounds(body)).Severity);
+
+            MeshFinding slot = Assert.Single(CreatureChecks.WornSlots(body));
+            Assert.Equal(FindingSeverity.Note, slot.Severity);
+            Assert.Contains("32", slot.Message, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// A skin bound before its skeleton was corrected is not a fault: one movement carries
+        /// the whole bind pose onto the skeleton, so the body goes with it. A skin whose bones
+        /// disagree among themselves is a fault, and the two have to be told apart -- by shape,
+        /// since a rotation moves two bones by quite different amounts.
+        /// </summary>
+        [Fact]
+        public void ABindPoseCorrectedAsAWholeIsNotedAndOneManglingItsBonesIsNot()
+        {
+            if (!Available) return;
+
+            CorrectedSkeleton made = BoughtSkeleton.Correct(Bought, Db);
+            NifModel body = BoughtSkeleton.Body(Bought, Db);
+
+            string folder = Path.Combine(Path.GetTempPath(), $"sk-body-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(folder);
+            try
+            {
+                string nif = Path.Combine(folder, "skeleton.nif");
+                made.Mesh.Save(nif);
+                NifModel skeleton = NifModel.Load(nif, Db);
+
+                // The body was converted from the bought file and the skeleton was corrected,
+                // so the two rest poses are 45 units apart -- and the same shape.
+                MeshFinding bind = Assert.Single(CreatureChecks.Skin(body, skeleton), f => f.Rule == "skin-bind");
+                Assert.Equal(FindingSeverity.Note, bind.Severity);
+                Assert.Contains("same shape", bind.Message, StringComparison.Ordinal);
+
+                // Move one bone on its own and it is no longer the same shape.
+                NifItem moved = skeleton.Blocks.First(b =>
+                    b.Name == "NiNode" && skeleton.GetString(b, "Name") == "NPC L Hand [LHnd]");
+                NifTransform was = skeleton.GetTransform(moved);
+                skeleton.SetTransform(moved, new NifTransform(
+                    new NifVector3(was.Translation.X + 25f, was.Translation.Y, was.Translation.Z),
+                    was.Rotation, was.Scale));
+
+                MeshFinding mangled = Assert.Single(CreatureChecks.Skin(body, skeleton), f => f.Rule == "skin-bind");
+                Assert.Equal(FindingSeverity.Error, mangled.Severity);
+            }
+            finally
+            {
+                try { Directory.Delete(folder, recursive: true); } catch (IOException) { }
+            }
+        }
+}
 }

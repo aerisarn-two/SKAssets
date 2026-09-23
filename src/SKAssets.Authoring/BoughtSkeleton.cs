@@ -117,6 +117,117 @@ namespace SKAssets.Authoring
             return new CorrectedSkeleton(renamed.Rig, grounded, renamed, mesh);
         }
 
+        /// <summary>
+        /// Writes a copy of a bought FBX with its bones under the names the creature uses.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// For everything else the file holds. A skinned body is the reason it exists: its skin
+        /// names the bones it is weighted to, so converted from the file as bought it comes out
+        /// weighted to <c>Bip01_L_Hand</c> on a creature whose skeleton calls that bone
+        /// <c>NPC L Hand [LHnd]</c>, and every vertex it moves is left at the origin. A copy
+        /// rather than an edit, because the bought file is the only record of what was bought.
+        /// </para>
+        /// <para>
+        /// Only the names are changed. Standing the creature on the floor, bringing it over the
+        /// origin and turning it to face forward are carried by its skeleton -- a skin's bind is
+        /// taken in the pose the file was authored in and the bone's transform is whatever the
+        /// corrected skeleton now says, so the mesh follows without being touched.
+        /// </para>
+        /// </remarks>
+        /// <param name="fbxPath">The bought FBX.</param>
+        /// <param name="outputPath">Where to write the copy.</param>
+        /// <param name="names">
+        /// The naming the creature's skeleton was put under. Pass the map
+        /// <see cref="CorrectedSkeleton.Renamed"/> was made with, or the same rig's biped map:
+        /// a body named one way and a skeleton another lines up by accident at best.
+        /// </param>
+        public static RenamedBones RenameBones(
+            string fbxPath, string outputPath, IReadOnlyDictionary<string, string>? names = null)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(fbxPath);
+            ArgumentException.ThrowIfNullOrEmpty(outputPath);
+
+            FbxDocument document = FbxDocument.Load(fbxPath);
+            IReadOnlyDictionary<string, string> map = names
+                ?? SkeletonNaming.BipedMap(FbxAnimationReader.ReadSkeleton(document));
+
+            RenamedBones done = FbxBoneRenaming.Rename(document, map);
+
+            string? folder = Path.GetDirectoryName(outputPath);
+            if (folder is { Length: > 0 }) Directory.CreateDirectory(folder);
+            document.Save(outputPath);
+
+            return done;
+        }
+
+        /// <summary>
+        /// Converts the body in a bought FBX, ready for the creature's skeleton to wear.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The bones are renamed, and nothing about the geometry is touched. A skinned mesh
+        /// follows its skeleton: the skin's bind is taken in the pose the file was authored in
+        /// and each bone's transform is whatever the corrected skeleton now says, so the whole
+        /// body is carried onto the floor, over the origin and round to face forward by the
+        /// same one transform, and nothing is bent. Measured on the bought skeleton, all 51 of
+        /// its bones came out that one displacement apart and not one of them differed from
+        /// the others.
+        /// </para>
+        /// <para>
+        /// Two things a converter cannot know are then written, because the game reads both
+        /// and neither survives a conversion. Every bone gets the sphere of what it actually
+        /// moves, or the engine merges the shape's bound out of coincident empty ones, gets a
+        /// NaN and culls the whole actor once a frame. And every partition is told the biped
+        /// slot the mesh is worn in, or the Creation Kit reads the 0 a converter leaves as a
+        /// biped object out of range and refuses the mesh outright.
+        /// </para>
+        /// <para>
+        /// The spheres are measured in each bone's own space, which is why they need no
+        /// correcting either: a sphere on a bone travels with the bone.
+        /// </para>
+        /// </remarks>
+        /// <param name="fbxPath">The bought FBX, whose mesh is converted.</param>
+        /// <param name="database">The NIF format description the mesh is built against.</param>
+        /// <param name="names">
+        /// The naming the creature's skeleton was put under, or null to read the biped naming
+        /// off the rig in the same file.
+        /// </param>
+        /// <param name="slot">
+        /// The biped slot the mesh is worn in. 32 is the body, which is what a creature's own
+        /// skin is.
+        /// </param>
+        public static NifModel Body(
+            string fbxPath,
+            NifXmlDatabase database,
+            IReadOnlyDictionary<string, string>? names = null,
+            int slot = 32)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(fbxPath);
+            ArgumentNullException.ThrowIfNull(database);
+
+            FbxDocument document = FbxDocument.Load(fbxPath);
+            IReadOnlyDictionary<string, string> map = names
+                ?? SkeletonNaming.BipedMap(FbxAnimationReader.ReadSkeleton(document));
+
+            FbxBoneRenaming.Rename(document, map);
+
+            NifModel body = SkeletonExchange.ImportMesh(document, database);
+
+            WornMesh.Bounds(body);
+            Slot(body, slot);
+
+            return body;
+        }
+
+        /// <summary>Tells every partition which biped slot the mesh is worn in.</summary>
+        private static void Slot(NifModel body, int slot)
+        {
+            foreach (NifItem skin in body.Blocks.Where(b => b.Name == "BSDismemberSkinInstance"))
+                foreach (NifItem partition in body.FindItem(skin, "Partitions")?.Children ?? [])
+                    body.FindItem(partition, "Body Part")?.Value.SetCount((ulong)slot);
+        }
+
         /// <summary>The same rig with one node above it, which the NIF's root block becomes.</summary>
         private static Skeleton Under(string name, Skeleton rig)
         {

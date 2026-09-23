@@ -13,7 +13,8 @@ namespace SKAssets.Authoring.Tests
             string meshes = Environment.GetEnvironmentVariable("SKASSETS_HAVOK_MESHES") ?? "";
             if (!Directory.Exists(meshes)) return;
 
-            string outDir = Environment.GetEnvironmentVariable("SK_OUT") ?? Path.GetTempPath();
+            string outDir = Environment.GetEnvironmentVariable("SK_OUT")
+                ?? Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "sk-bought-dump")).FullName;
             var db = NifXmlDatabase.LoadEmbedded();
             var sb = new StringBuilder();
             var kinds = new Dictionary<string, int>(StringComparer.Ordinal);
