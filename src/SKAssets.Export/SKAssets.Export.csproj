@@ -39,7 +39,7 @@
     -->
     <PackageReference Include="NIFBX" Version="1.6.20" />
     <PackageReference Include="HKFBX" Version="1.12.0" />
-    <PackageReference Include="HKSK" Version="2.8.0" />
+    <PackageReference Include="HKSK" Version="2.9.2" />
   </ItemGroup>
 
   <ItemGroup>
