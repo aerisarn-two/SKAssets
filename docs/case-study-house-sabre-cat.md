@@ -344,6 +344,28 @@ attack. And of the cat's animations that replace one of the sabre cat's, 47 tell
 the graph exactly what the original told it; the 10 that differ differ only in
 the sound they name, which is the rename in §10.
 
+## 10b. Where a speed ladder's arms go
+
+A parametric blend on speed -- the *ladder* -- has an arm per gait, and an arm
+sits at the speed that arm moves the creature. Not the speed of the clip under
+it: the speed of the clip at the rate the generator plays it. The game's own say
+this exactly. The sabre cat's trot plays at twice rate for its fast band, 208.7
+by 2 is 417.4, and the arm reads 417.4. Its run plays at 1.15 and at 0.75 for
+the two run bands, 490 by each, and the arms read 563.6 and 367.5.
+
+The cat's arms were set from the clips' own speeds with the rate forgotten, so
+three of the six were in the wrong place. The worst by a factor of twenty-five:
+the slow walk band is the walk clip played at a twenty-fifth speed, so an arm
+that said 5 delivered 1.3. Everywhere between a standstill and a walk the graph
+was asked for a speed it answered at a quarter of, which in the game is a cat
+that stands still while it slides along.
+
+They are read off the clips now, after the fast run has been swapped into the
+top band so that what an arm says is what the clip beneath it will do. The walk
+ladder delivers 1.5, 33.0, 82.3 and 164.6; the run ladder 126.4 and 273.7. The
+proportions are the sabre cat's, because the play rates are: its creep is a
+twenty-fifth of its walk and so is the cat's.
+
 ## 11. What is not settled
 
 **Attacks were reported not to fire in game.** The plugin, the set data, the
