@@ -93,6 +93,19 @@ public sealed class ZzNodeTree
                     else if (i < 3) sb.AppendLine($"      bone[{i}] '{model.GetName(links[i].Block!)}'");
             }
 
+            foreach (NifItem skin in model.Blocks.Where(b => b.Name is "NiSkinInstance" or "BSDismemberSkinInstance"))
+            {
+                NifItem? partition = model.GetRef(skin, "Skin Partition");
+                sb.AppendLine($"   {skin.Name} [{model.IndexOf(skin)}]: instance lists {model.FindItem(skin, "Partitions")?.Children.Count ?? -1} partitions, "
+                    + $"the partition block has {model.FindItem(partition!, "Partitions")?.Children.Count ?? -1} "
+                    + $"(says {model.GetUInt(partition!, "Num Partitions")}), data bones {model.GetUInt(model.GetRef(skin, "Data")!, "Num Bones")}");
+                int n = 0;
+                foreach (NifItem part in model.FindItem(partition!, "Partitions")?.Children ?? [])
+                    sb.AppendLine($"      partition[{n++}] vertices {model.GetUInt(part, "Num Vertices")} triangles {model.GetUInt(part, "Num Triangles")} "
+                        + $"bones {model.GetUInt(part, "Num Bones")} strips {model.GetUInt(part, "Num Strips")} "
+                        + $"weights/vertex {model.GetUInt(part, "Num Weights Per Vertex")} map {model.FindItem(part, "Vertex Map")?.Children.Count}");
+            }
+
             // Everything that is neither a node nor geometry, listed once.
             foreach (NifItem block in model.Blocks)
                 if (block.Name is not ("NiNode" or "BSFadeNode" or "BSLeafAnimNode" or "BSTriShape" or "BSDynamicTriShape" or "NiTriShape"))
