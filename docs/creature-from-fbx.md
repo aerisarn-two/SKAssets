@@ -332,9 +332,11 @@ Before:
 - `CreatureChecks`, which `ImportCreature` runs and reports as findings: **the files
   against each other**, since each converter reads the FBX its own way and each file
   is correct on its own. The skeleton NIF's bones against the Havok rig's, the skin's
-  bind pose against the skeleton's bones, the skin's triangles against the FBX's, and
-  every vertex weighted. All four were measured on the cat and three of them failed:
-  see the traps below;
+  bind pose against the skeleton's bones, the skin's triangles against the FBX's, every
+  vertex weighted, every partition naming a biped slot, every bone carrying the sphere of
+  what it moves, a worn shape hanging off the root, and every block the size its header
+  says. Each of the eight was added because it had already gone wrong once on the cat:
+  see the traps below and `docs/case-study-house-sabre-cat.md`;
 - HKSK `ConsistencyReport` over the new project: every clip's cache index is its
   animation's position, speed and crops agree, every generator is cached;
 - the census reading of the assembled project (`ZzCreatureCensus` in HKSK's tests)
@@ -382,8 +384,11 @@ each failure hides the next:
 - **A kill-move victim needs the killer's half too**, in the humanoid graph, and a
   paired animation authored for both rigs; a new rig cannot borrow the wolf's.
 - **The paths in the archives use `/`** and the records `\`; compare normalised.
-- **An idle record serves the behaviour file it names.** The sabre cat's 49 name
-  `Meshes\Actors\SabreCat\Behaviors\SabreCatBehavior.hkx`, and they are how the AI's
+- **An idle record serves the behaviour file it names, and names it from Meshes.**
+  The sabre cat's 49 name `Actors\SabreCat\Behaviors\SabreCatBehavior.hkx`: all 3,458
+  idle filenames in the masters begin `Actors\` and not one begins `Meshes\`. A copy
+  that writes the path from the Data folder instead reaches none of its idles. They are
+  how the AI's
   actions reach the graph at all: `moveStart`, the turns, `swimStart`, `staggerStart`,
   `recoilStart`, `bleedOutStart`, sitting, lying down, dying. A copy of the graph under
   another folder is not that file, so a creature without copies of them stands where it
@@ -396,6 +401,34 @@ each failure hides the next:
   `skeleton.hkx` and every clip come out right and the `skeleton.nif` and the skin 100
   times too large, with no error anywhere. Export from a metric scene of scale length
   0.01 -- one Blender unit, one game unit -- and the factor is 1 both ways.
+- **An arm of a parametric blend sits where its clip actually goes**, which is the
+  clip's own travel or its own yaw, over its own duration, *at the rate the generator
+  plays it*. The play rate is written on the clip and the arm on the blend, and nothing
+  checks them against each other. The sabre cat's six forward arms satisfy it to the
+  decimal -- trot 208.7 at twice rate is the fast band's 417.4, run 490 at 1.15 and at
+  0.75 are 563.6 and 367.5 -- and only two of the six are played at a rate of one, which
+  is why reading the clip and multiplying by nothing looks right. Getting it wrong is a
+  creature that slides at low speed and turns a fraction of what it was asked for.
+- **A shipped creature's forward clips may not turn at all.** The sabre cat's
+  `WalkForwardL` travels 162 units and rotates a tenth of a degree, so the arms of its
+  turning blends are an animator's description of what a clip looks like and the engine
+  does the turning. Clips authored in Blender usually carry the turn in their root
+  motion, which makes those arms mean something and makes the rule above apply to them.
+- **A worn mesh names the biped slot it is worn in**, once per skin partition, and the
+  slots run 30 to 61. A converter writes 0; the game reads that as a biped object out of
+  range, stops trying to skin the mesh, looks for a `Prn` string naming a node to hang it
+  off, and refuses the mesh with "Could not find parent node extra data". The addon knows
+  the slot: the lowest bit its body template sets, plus 30.
+- **A skinned shape has no bound of its own.** The engine rebuilds one each frame from a
+  sphere per bone, held in that bone's space, and a converter leaves them all empty and
+  at the origin. Merging coincident points of no size is a bound that is not a number,
+  which the engine propagates up the tree and culls everything beneath.
+- **A skinned shape hangs off the root.** 1,459 of the game's skinned shapes do, and the
+  126 that do not are effects, thrown weapons and generated faces, never a body worn
+  through an armour addon. Blender parents a body to its armature and the FBX says so.
+- **A NIF's block sizes are derived data** and nothing recomputes them on an edit. A
+  texture path rewritten after the conversion measured the blocks is a file the Creation
+  Kit refuses with "Stream size mismatch" and a viewer opens without complaint.
 - **A vertex shared across a UV seam is several vertices in a NIF**, and the weights
   have to reach all of them. The converter used to give them to one copy; the others
   are moved by nothing and drawn at the origin, which tears the skin open along every
