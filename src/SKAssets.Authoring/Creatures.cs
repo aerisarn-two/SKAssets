@@ -1135,8 +1135,13 @@ namespace SKAssets.Authoring
                     char separator = given.Contains('/') ? '/' : '\\';
                     // The file it names was copied under the new creature's name too.
                     string rest = renamed(Normal(given)[from.Length..]);
+                    // The path is stored from Meshes, not through it: all 3,458 idle filenames
+                    // in the masters begin Actors\, and not one begins Meshes\. An idle is
+                    // matched to an actor by this path against the behaviour graph it runs, so a
+                    // record that spells it the other way is an idle the creature never gets --
+                    // no moveStart, no turn, no stagger, and an actor that slides where it walks.
                     made.Filename = new Mutagen.Bethesda.Plugins.Assets.AssetLink<Mutagen.Bethesda.Skyrim.Assets.SkyrimBehaviorAssetType>(
-                        ("Meshes\\" + to + rest).Replace('\\', separator));
+                        (to + rest).Replace('\\', separator));
                 }
 
                 // The event it sends is the graph's, and the graph's events were renamed with it.

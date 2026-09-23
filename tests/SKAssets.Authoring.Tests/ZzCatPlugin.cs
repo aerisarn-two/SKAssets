@@ -69,6 +69,19 @@ public sealed class ZzCatPlugin
             if (left.Count > 0) sb.AppendLine($"still the sabre cat's, in {record.GetType().Name} {record.EditorID}: {string.Join(", ", left)}");
         }
 
+        // How the game's own idle records spell the behaviour file they name.
+        var spellings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        int named = 0;
+        foreach (var idle in order.SelectMany(m => m.IdleAnimations))
+            if (idle.Filename?.GivenPath is { Length: > 0 } f)
+            {
+                named++;
+                string head = f.Replace('/', '\\').Split('\\')[0];
+                spellings[head] = spellings.GetValueOrDefault(head) + 1;
+            }
+        sb.AppendLine($"idle filenames in the masters: {named}, first folder: "
+            + string.Join(", ", spellings.OrderByDescending(p => p.Value).Select(p => $"{p.Key} x{p.Value}")));
+
         foreach (var d in plugin.SoundDescriptors)
             sb.AppendLine($"SNDR {d.EditorID}: files={d.SoundFiles?.Count} first={d.SoundFiles?.FirstOrDefault()}");
         foreach (var m in plugin.SoundMarkers)

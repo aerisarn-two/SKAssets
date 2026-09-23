@@ -93,6 +93,14 @@ namespace SKAssets.Authoring.Tests
             Assert.All(plugin.ArmorAddons, aa => Assert.Equal(race.FormKey, aa.Race.FormKey));
             Assert.Equal(race.FormKey, Assert.Single(plugin.Npcs).Race.FormKey);
             Assert.Equal(race.SkeletalModel.Male.File.GivenPath, plugin.BodyParts.Single().Model!.File.GivenPath);
+
+            // An idle reaches an actor by the behaviour file it names, and the masters spell that
+            // from Meshes rather than through it: all 3,458 idle filenames in them begin Actors\
+            // and not one begins Meshes\. A copy that spells it the other way is an idle the
+            // creature never gets.
+            var named = plugin.IdleAnimations.Where(i => i.Filename?.GivenPath is { Length: > 0 }).ToList();
+            Assert.NotEmpty(named);
+            Assert.All(named, i => Assert.StartsWith(@"actors\MyMod_Direwolf\", i.Filename!.GivenPath, StringComparison.OrdinalIgnoreCase));
         }
     }
 
