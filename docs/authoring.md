@@ -235,6 +235,29 @@ CreatureResult direwolf = authoring.ImportCreature(new NewCreature
   the footstep, impact set, impact and sound are copied, the sound naming the new files
   under `Sound\FX\<creature>\<event>`. Every other event keeps the template's sound. An
   event the body's set does not have is refused before anything is written.
+- **Named after the creature**, everywhere a name is written down and nothing outside
+  the project depends on it: the Havok files and the two places one names another; the
+  animations, last of all, because a clip manifest is written against the template's
+  names and means the slots; the graph's nodes, its events, its variables and its
+  character properties; the records, including the idles. The rule is made from the
+  template's name rather than listed, since the sabre cat's records mostly do not spell
+  it out -- `SCatRecoil`, `ScatReset`, `CatIdleWarn` -- and a name misspelled by one
+  letter still counts, which is how `SabreCastStartSwimming` comes out right. What is
+  **not** renamed is what something else answers to: a bone, a ragdoll body and a
+  constraint, which are matched across files by the request's bone map and by the skin;
+  a paired kill move event, which is how two graphs agree on one animation; and a sound
+  event, whose payload is the record to play.
+- **Records for the sounds it asks for.** Every `SoundPlay.` in the graphs and the
+  animations that names the template is copied under the creature's name -- a marker
+  repointed at the descriptor beneath it -- and the reference points at the copy. The
+  copies play the template's audio, which is the only audio there is; what they are for
+  is that the files can be replaced without touching the game's own records. A shared
+  graph asks for every species that uses it, and those are left alone.
+- **The extra data a skeleton is read for.** A converted skeleton has the bones, the
+  ragdoll and a `BSXFlags`; the game's own hang three more off the root. The actor's box
+  is measured from the body rather than copied, since the template's is the template's
+  size; the bone LOD list is remapped and left out when nothing survives; the skeleton
+  identifier is copied, being an export's run and not an identity.
 - **Shared unless asked**: the movement types and the sounds, both found by name.
 
 Against the game, the wolf cloned as a direwolf opens from the caches written as an actor
