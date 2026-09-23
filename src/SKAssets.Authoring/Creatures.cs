@@ -523,6 +523,8 @@ namespace SKAssets.Authoring
                     skeletonNif.Save(Path.Combine(meshes, newSkeletonModel!.Replace('\\', Path.DirectorySeparatorChar)));
                 }
 
+                foreach (MeshFinding finding in CreatureChecks.Ground(skeletonNif))
+                    findings.Add((newSkeletonModel!, finding));
                 foreach (MeshFinding finding in CreatureChecks.Skeleton(skeletonNif, skeletonHavok))
                     findings.Add((newSkeletonModel!, finding));
                 foreach (MeshFinding finding in CreatureChecks.BlockSizes(NifModel.Load(Path.Combine(meshes, newSkeletonModel!.Replace('\\', Path.DirectorySeparatorChar)), NifXmlDatabase.LoadEmbedded())))

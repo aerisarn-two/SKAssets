@@ -53,6 +53,35 @@ namespace SKAssets.Authoring.Tests
             Assert.Contains(findings, f => f.Rule == "skeleton-placement");
         }
 
+        /// <summary>
+        /// A creature is authored standing on the origin. All 52 of the game's skeletons have
+        /// their lowest bone at or below one unit and not one above it.
+        /// </summary>
+        [HavokMastersFact]
+        public void ARigThatDoesNotStandOnTheGroundIsReported()
+        {
+            NifModel skeleton = Skeleton();
+            Assert.Equal(FindingSeverity.Note, Assert.Single(CreatureChecks.Ground(skeleton)).Severity);
+
+            // Lifted: the creature floats.
+            NifItem root = skeleton.Blocks[0];
+            NifTransform was = skeleton.GetTransform(root);
+            skeleton.SetTransform(root, new NifTransform(
+                new NifVector3(was.Translation.X, was.Translation.Y, was.Translation.Z + 40f), was.Rotation, was.Scale));
+
+            MeshFinding floating = Assert.Single(CreatureChecks.Ground(skeleton));
+            Assert.Equal(FindingSeverity.Error, floating.Severity);
+            Assert.Contains("floats", floating.Message, StringComparison.Ordinal);
+
+            // Dropped: a rig built around its pelvis rather than its feet.
+            skeleton.SetTransform(root, new NifTransform(
+                new NifVector3(was.Translation.X, was.Translation.Y, was.Translation.Z - 40f), was.Rotation, was.Scale));
+
+            MeshFinding buried = Assert.Single(CreatureChecks.Ground(skeleton));
+            Assert.Equal(FindingSeverity.Error, buried.Severity);
+            Assert.Contains("below the ground", buried.Message, StringComparison.Ordinal);
+        }
+
         /// <summary>The wolf's own skin: bound where its skeleton stands, and fully weighted.</summary>
         [HavokMastersFact]
         public void AShippedSkinIsBoundToItsSkeletonAndFullyWeighted()

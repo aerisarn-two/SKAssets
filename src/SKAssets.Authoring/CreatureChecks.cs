@@ -277,6 +277,44 @@ namespace SKAssets.Authoring
                 $"{wrong.Count} blocks are not the size the header says, the first being block {index}, a {name}, at {said} bytes against {isNow}")];
         }
 
+        /// <summary>Where the creature stands relative to the ground.</summary>
+        /// <remarks>
+        /// A creature is authored standing on the origin: the root bone is at it and the lowest
+        /// bone is on it. All 52 of the game's creature skeletons have their lowest bone at or
+        /// below one unit and not one above it, seven reaching a little under -- the sabre cat's
+        /// lowest is -4.2 -- because a bone may hang below the foot that carries it.
+        ///
+        /// An asset authored for another engine often is not. A Biped from 3ds Max is built
+        /// around its pelvis, so the character hangs below the ground by the length of its legs,
+        /// and a creature imported that way is buried to the waist with its feet underground.
+        /// </remarks>
+        public static IReadOnlyList<MeshFinding> Ground(NifModel skeleton)
+        {
+            ArgumentNullException.ThrowIfNull(skeleton);
+
+            var bones = NodeWorld(skeleton);
+            if (bones.Count == 0) return [];
+
+            var lowest = bones.OrderBy(b => b.Value.Translation.Z).First();
+            float floor = lowest.Value.Translation.Z;
+            float top = bones.Values.Max(m => m.Translation.Z);
+
+            if (floor > 1f)
+                return [new MeshFinding("skeleton-ground", FindingSeverity.Error,
+                    $"the whole rig stands {floor:F1} units above the ground, its lowest bone being '{lowest.Key}'; "
+                    + "a creature is authored standing on the origin and this one floats")];
+
+            // Below the ground by more than the game's own ever reach is the Biped case: built
+            // around the pelvis, so the legs hang under the floor.
+            if (floor < -5f)
+                return [new MeshFinding("skeleton-ground", FindingSeverity.Error,
+                    $"the rig hangs {-floor:F1} units below the ground, its lowest bone being '{lowest.Key}'; "
+                    + "the game's own reach -4.2 at worst, so this is a rig built around its pelvis rather than its feet")];
+
+            return [new MeshFinding("skeleton-ground", FindingSeverity.Note,
+                $"the rig stands on the ground, {floor:F1} to {top:F1} units")];
+        }
+
         /// <summary>The slot each skinned partition says the mesh is worn in.</summary>
         /// <remarks>
         /// A dismembered skin names a biped slot per partition, and the slots are 30 to 61. A
