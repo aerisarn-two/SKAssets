@@ -69,6 +69,11 @@ public sealed class ZzCatPlugin
             if (left.Count > 0) sb.AppendLine($"still the sabre cat's, in {record.GetType().Name} {record.EditorID}: {string.Join(", ", left)}");
         }
 
+        foreach (var d in plugin.SoundDescriptors)
+            sb.AppendLine($"SNDR {d.EditorID}: files={d.SoundFiles?.Count} first={d.SoundFiles?.FirstOrDefault()}");
+        foreach (var m in plugin.SoundMarkers)
+            sb.AppendLine($"SOUN {m.EditorID}: descriptor={Name(m.SoundDescriptor)}");
+
         foreach (var movt in plugin.MovementTypes)
             sb.AppendLine($"MOVT {movt.EditorID}: name '{movt.Name}' walk {movt.ForwardWalk} run {movt.ForwardRun}");
 

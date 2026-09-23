@@ -264,6 +264,14 @@ namespace SKAssets.Authoring
             }
             if (shared > 0) notes.Add($"{shared} animations live outside the template's folder and are shared, not copied");
 
+            // The sounds the graphs and the animations ask for, given records of the creature's
+            // own. It waits for the animations because the annotations that ask are in them.
+            if (named.Count > 0)
+                foreach ((string was, string now) in CopySounds(target, storedFiles,
+                             character?.AnimationNames.Where(a => !a.Replace('/', '\\').StartsWith(@"..\", StringComparison.Ordinal)) ?? [],
+                             spellings, id, records, notes))
+                    renamedEvents[was] = now;
+
             // The copies name each other by the names they had: the project names its character
             // file and the character names its behaviour. Both are rewritten in the copies,
             // which are the files the game will read. The animations are renamed further down,
@@ -706,6 +714,135 @@ namespace SKAssets.Authoring
                 notes.Add($"{map.Count} nodes across {graphs} graphs were named after the template and are named after the creature");
 
             return map;
+        }
+
+        /// <summary>
+        /// Gives the creature its own records for the sounds its graphs and animations ask for,
+        /// and points the copies at them.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A sound is asked for by an event or an annotation reading <c>SoundPlay.</c> and then
+        /// the editor id of the record to play, which is why those names cannot simply be
+        /// renamed: the name is the reference. So the record is copied first, under the
+        /// creature's name, and then the reference is pointed at the copy -- a marker at the
+        /// descriptor beneath it where that was copied too.
+        /// </para>
+        /// <para>
+        /// Only the sounds the template names are taken. A shared graph asks for every species
+        /// that uses it -- the quadruped one names the bear's, the cow's, the goat's and the
+        /// dog's -- and those belong to the creatures whose states they sit in.
+        /// </para>
+        /// <para>
+        /// The copies play the template's audio, since that is the only audio there is. What
+        /// they are for is that the files can now be replaced without touching the game's own
+        /// records, and that a creature's sounds read as its own wherever they are listed.
+        /// </para>
+        /// </remarks>
+        private Dictionary<string, string> CopySounds(string target, IEnumerable<string> graphs, IEnumerable<string> animations,
+            IReadOnlyList<string> spellings, string id, List<AuthoredRecord> records, List<string> notes)
+        {
+            const string Play = "SoundPlay.";
+
+            var paths = graphs.Concat(animations).Select(f => HavokPath.Resolve(target, f)).OfType<string>().Distinct().ToList();
+            var loaded = new List<(string Path, HavokFile File)>();
+            var asked = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string path in paths)
+            {
+                HavokFile file;
+                try { file = HavokFile.Load(path); }
+                catch (Exception e) when (e is not OutOfMemoryException) { continue; }
+
+                var here = new List<string>();
+                foreach (HKX2.hkbBehaviorGraphStringData strings in file.All<HKX2.hkbBehaviorGraphStringData>())
+                    here.AddRange(strings.m_eventNames);
+                foreach (HKX2.hkaAnnotationTrack track in file.All<HKX2.hkaAnnotationTrack>())
+                    here.AddRange(track.m_annotations.Select(a => a.m_text ?? ""));
+
+                bool any = false;
+                foreach (string text in here)
+                {
+                    int at = text.IndexOf(Play, StringComparison.OrdinalIgnoreCase);
+                    if (at < 0) continue;
+                    string named = text[(at + Play.Length)..].Trim();
+                    if (named.Length == 0 || AfterCreature(named, spellings, id) is null) continue;
+                    asked.Add(named);
+                    any = true;
+                }
+
+                if (any || file.All<HKX2.hkbBehaviorGraphStringData>().Any()) loaded.Add((path, file));
+            }
+
+            // Descriptors before markers, so a marker can be pointed at the copy beneath it.
+            var copied = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var byOriginal = new Dictionary<FormKey, FormKey>();
+
+            foreach (string named in asked.OrderBy(n => _cache.TryResolve<ISoundMarkerGetter>(n, out _) ? 1 : 0))
+            {
+                if (AfterCreature(named, spellings, id) is not { } becomes) continue;
+
+                if (_cache.TryResolve<ISoundDescriptorGetter>(named, out var descriptor))
+                {
+                    var made = Plugin.SoundDescriptors.DuplicateInAsNewRecord<SoundDescriptor, ISoundDescriptorGetter>(descriptor, becomes);
+                    byOriginal[descriptor.FormKey] = made.FormKey;
+                    copied[named] = becomes;
+                    records.Add(new AuthoredRecord(made.FormKey, nameof(SoundDescriptor), becomes, descriptor.FormKey));
+                }
+                else if (_cache.TryResolve<ISoundMarkerGetter>(named, out var marker))
+                {
+                    var made = Plugin.SoundMarkers.DuplicateInAsNewRecord<SoundMarker, ISoundMarkerGetter>(marker, becomes);
+                    if (byOriginal.TryGetValue(made.SoundDescriptor.FormKey, out FormKey beneath)) made.SoundDescriptor.SetTo(beneath);
+                    copied[named] = becomes;
+                    records.Add(new AuthoredRecord(made.FormKey, nameof(SoundMarker), becomes, marker.FormKey));
+                }
+                else notes.Add($"the sound '{named}' is asked for by the graphs and is in no plugin of the load order");
+            }
+
+            if (copied.Count == 0) return [];
+
+            // The references, now that there is something to point them at.
+            var events = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            string Point(string text)
+            {
+                int at = text.IndexOf(Play, StringComparison.OrdinalIgnoreCase);
+                if (at < 0) return text;
+                string named = text[(at + Play.Length)..];
+                string trimmed = named.Trim();
+                return copied.TryGetValue(trimmed, out string? becomes)
+                    ? text[..(at + Play.Length)] + named.Replace(trimmed, becomes, StringComparison.Ordinal)
+                    : text;
+            }
+
+            foreach ((string path, HavokFile file) in loaded)
+            {
+                bool changed = false;
+                foreach (HKX2.hkbBehaviorGraphStringData strings in file.All<HKX2.hkbBehaviorGraphStringData>())
+                    for (int i = 0; i < strings.m_eventNames.Count; i++)
+                    {
+                        string was = strings.m_eventNames[i], now = Point(was);
+                        if (string.Equals(now, was, StringComparison.Ordinal)) continue;
+                        strings.m_eventNames[i] = now;
+                        events[was] = now;
+                        changed = true;
+                    }
+
+                foreach (HKX2.hkaAnnotationTrack track in file.All<HKX2.hkaAnnotationTrack>())
+                    foreach (HKX2.hkaAnnotationTrackAnnotation annotation in track.m_annotations)
+                    {
+                        string was = annotation.m_text ?? "", now = Point(was);
+                        if (string.Equals(now, was, StringComparison.Ordinal)) continue;
+                        annotation.m_text = now;
+                        events[was] = now;
+                        changed = true;
+                    }
+
+                if (changed) file.Save(path);
+            }
+
+            notes.Add($"{copied.Count} sounds of the template's are the creature's own: {string.Join(", ", copied.Values.Order())}");
+            return events;
         }
 
         /// <summary>
