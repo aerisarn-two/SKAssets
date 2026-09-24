@@ -108,7 +108,7 @@ namespace SKAssets.Authoring.Tests
             foreach (string note in installed.Notes) sb.AppendLine($"  {note}");
 
             // ---- the body and its textures
-            NifModel body = BoughtSkeleton.Body(fbx, db, made.Names);
+            NifModel body = BoughtSkeleton.Body(fbx, db, made.Names, correction: rig.Grounded.Correction);
             string bodyPath = Path.Combine(here, Name.ToLowerInvariant() + ".nif");
             body.Save(bodyPath);
             sb.AppendLine($"body: {bodyPath}");

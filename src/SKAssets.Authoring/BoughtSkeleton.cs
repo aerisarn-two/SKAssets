@@ -11,11 +11,18 @@ namespace SKAssets.Authoring
     /// <param name="Grounded">What putting it where the game expects took.</param>
     /// <param name="Renamed">What putting it under the game's names changed, and what it left.</param>
     /// <param name="Mesh">The render skeleton, as a NIF.</param>
+    /// <param name="Names">
+    /// The naming this rig was put under, which everything else made from the same asset has
+    /// to be put under too. Handed back rather than worked out twice: read off a rig it
+    /// depends on that rig, and a body named one way and a skeleton another lines up by
+    /// accident at best.
+    /// </param>
     public sealed record CorrectedSkeleton(
         Skeleton Rig,
         GroundedSkeleton Grounded,
         RenamedSkeleton Renamed,
-        NifModel Mesh)
+        NifModel Mesh,
+        IReadOnlyDictionary<string, string> Names)
     {
         public override string ToString() => $"{Rig.Count} bones; {Grounded}; {Renamed}";
     }
@@ -91,8 +98,8 @@ namespace SKAssets.Authoring
             float turn = pairs.Length > 0 ? SkeletonGrounding.TurnToFaceForward(bought, pairs) : 0f;
 
             GroundedSkeleton grounded = SkeletonGrounding.Ground(bought, centre: true, turnDegrees: turn);
-            RenamedSkeleton renamed = SkeletonNaming.Rename(
-                grounded.Rig, names ?? SkeletonNaming.BipedMap(grounded.Rig));
+            IReadOnlyDictionary<string, string> naming = names ?? SkeletonNaming.BipedMap(grounded.Rig);
+            RenamedSkeleton renamed = SkeletonNaming.Rename(grounded.Rig, naming);
 
             // The mesh is built from the corrected rig written back out, not from the file it
             // came in on: the file still has the bones where and as its exporter left them.
@@ -114,7 +121,7 @@ namespace SKAssets.Authoring
             // root 'skeleton.nif' and ten more 'Skeleton.nif'. Not one calls it 'Scene'.
             if (mesh.Blocks.Count > 0) mesh.SetString(mesh.Blocks[0], "Name", meshName);
 
-            return new CorrectedSkeleton(renamed.Rig, grounded, renamed, mesh);
+            return new CorrectedSkeleton(renamed.Rig, grounded, renamed, mesh, naming);
         }
 
         /// <summary>
@@ -197,11 +204,20 @@ namespace SKAssets.Authoring
         /// The biped slot the mesh is worn in. 32 is the body, which is what a creature's own
         /// skin is.
         /// </param>
+        /// <param name="correction">
+        /// The movement that carried the creature's skeleton from where it was authored to
+        /// where the game wants it, from <see cref="GroundedSkeleton.Correction"/>. The body
+        /// is given the same one, on its root, so that the bones it carries copies of stand
+        /// where the skeleton's stand. Without it the two are 45 units apart in the file, and
+        /// the body is drawn in the pose the asset was bought in by anything that reads it
+        /// without a skeleton to pose it -- which is every tool that opens it.
+        /// </param>
         public static NifModel Body(
             string fbxPath,
             NifXmlDatabase database,
             IReadOnlyDictionary<string, string>? names = null,
-            int slot = 32)
+            int slot = 32,
+            BoneTransform? correction = null)
         {
             ArgumentException.ThrowIfNullOrEmpty(fbxPath);
             ArgumentNullException.ThrowIfNull(database);
@@ -214,10 +230,33 @@ namespace SKAssets.Authoring
 
             NifModel body = SkeletonExchange.ImportMesh(document, database);
 
+            // The same movement the skeleton was given, on the body's root, so that the two
+            // describe one creature standing in one place. Nothing else is touched: a skinned
+            // shape is drawn from its skin and not from the nodes above it, so at run time the
+            // body still lands where its bones put it, and the bones are the skeleton's.
+            if (correction is { } moved && body.Blocks.Count > 0)
+                body.SetTransform(body.Blocks[0], new NifTransform(
+                    new NifVector3(moved.Translation.X, moved.Translation.Y, moved.Translation.Z),
+                    Rotation(moved.Rotation),
+                    moved.Scale.X == 0f ? 1f : moved.Scale.X));
+
             WornMesh.Bounds(body);
             Slot(body, slot);
 
             return body;
+        }
+
+        /// <summary>A quaternion in the column form a NIF stores a rotation in.</summary>
+        private static NifMatrix33 Rotation(System.Numerics.Quaternion q)
+        {
+            System.Numerics.Matrix4x4 m = System.Numerics.Matrix4x4.CreateFromQuaternion(q);
+
+            return new NifMatrix33
+            {
+                M11 = m.M11, M12 = m.M21, M13 = m.M31,
+                M21 = m.M12, M22 = m.M22, M23 = m.M32,
+                M31 = m.M13, M32 = m.M23, M33 = m.M33,
+            };
         }
 
         /// <summary>Tells every partition which biped slot the mesh is worn in.</summary>

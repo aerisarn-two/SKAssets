@@ -186,5 +186,55 @@ namespace SKAssets.Authoring.Tests
                 try { Directory.Delete(folder, recursive: true); } catch (IOException) { }
             }
         }
-}
+
+        /// <summary>
+        /// The body carries copies of the bones it is weighted to -- the wolf's carries 40 and
+        /// the player's 24 -- and they have to stand where the skeleton stands them. Given the
+        /// same movement the skeleton was given they do; without it the body is drawn in the
+        /// pose the asset was bought in, 45 units from its own skeleton, by everything that
+        /// opens the file without a skeleton to pose it.
+        /// </summary>
+        [Fact]
+        public void TheBodysOwnBonesStandWhereTheSkeletonStandsThem()
+        {
+            if (!Available) return;
+
+            CorrectedSkeleton made = BoughtSkeleton.Correct(Bought, Db);
+
+            NifModel uncorrected = BoughtSkeleton.Body(Bought, Db, made.Names);
+            NifModel corrected = BoughtSkeleton.Body(Bought, Db, made.Names, correction: made.Grounded.Correction);
+
+            var skeleton = Standing(made.Mesh);
+            float Worst(NifModel body)
+            {
+                var theirs = Standing(body);
+                return skeleton
+                    .Where(b => theirs.ContainsKey(b.Key))
+                    .Select(b => (theirs[b.Key].Translation - b.Value.Translation).Length())
+                    .DefaultIfEmpty(0f)
+                    .Max();
+            }
+
+            Assert.True(Worst(uncorrected) > 10f, "without the movement the body stands where it was authored");
+            Assert.True(Worst(corrected) < 0.01f, $"with it the two agree; worst was {Worst(corrected)}");
+        }
+
+        /// <summary>Where every node in a model stands.</summary>
+        private static Dictionary<string, System.Numerics.Matrix4x4> Standing(NifModel model)
+        {
+            var where = new Dictionary<string, System.Numerics.Matrix4x4>(StringComparer.Ordinal);
+
+            void Walk(NifItem at, System.Numerics.Matrix4x4 parent)
+            {
+                System.Numerics.Matrix4x4 world = model.GetTransform(at).ToMatrix() * parent;
+                if (model.GetString(at, "Name") is { Length: > 0 } name) where[name] = world;
+                foreach (NifItem link in model.FindItem(at, "Children")?.Children ?? [])
+                    if (int.TryParse(link.Value.ToString(), out int i) && i >= 0 && i < model.Blocks.Count)
+                        Walk(model.Blocks[i], world);
+            }
+
+            Walk(model.Blocks[0], System.Numerics.Matrix4x4.Identity);
+            return where;
+        }
+    }
 }
