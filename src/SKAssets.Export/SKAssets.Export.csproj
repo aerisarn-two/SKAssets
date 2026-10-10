@@ -38,8 +38,8 @@
       know what a plugin refers to should not be made to carry any of it.
     -->
     <PackageReference Include="NIFBX" Version="1.6.20" />
-    <PackageReference Include="HKFBX" Version="1.13.0" />
-    <PackageReference Include="HKSK" Version="2.9.2" />
+    <PackageReference Include="HKFBX" Version="1.15.0" />
+    <PackageReference Include="HKSK" Version="2.10.2" />
   </ItemGroup>
 
   <ItemGroup>
